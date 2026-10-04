@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install the chosen speech engine in this skill's isolated virtualenv."""
+"""Install CPU speech detection and the chosen transcription engine in an isolated virtualenv."""
 from __future__ import annotations
 import argparse
 import json
@@ -24,9 +24,11 @@ def main() -> None:
     if not args.check_only:
         if not python.is_file():
             venv.EnvBuilder(with_pip=True).create(environment)
-        requirement = "mlx-whisper>=0.4,<1" if backend == "mlx" else "faster-whisper>=1.1,<2"
-        subprocess.run([str(python), "-m", "pip", "install", requirement], check=True)
-    report = {"backend": backend, "python": str(python), "virtualenv_exists": python.is_file(), "note": "FFmpeg must be installed separately. The speech model downloads on first use, then inference runs locally."}
+        requirements = ["faster-whisper>=1.2.1,<2"]
+        if backend == "mlx":
+            requirements.append("mlx-whisper>=0.4,<1")
+        subprocess.run([str(python), "-m", "pip", "install", *requirements], check=True)
+    report = {"backend": backend, "python": str(python), "virtualenv_exists": python.is_file(), "speech_detector": "CPU Silero VAD bundled with faster-whisper", "note": "FFmpeg must be installed separately. The transcription model downloads on first use, then inference runs locally. Speech-only VAD needs no Whisper transcription weights."}
     print(json.dumps(report, indent=2))
 
 

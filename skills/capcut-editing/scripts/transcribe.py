@@ -2,6 +2,7 @@
 """Normalize local Whisper engines to the same word-timestamp JSON format."""
 from __future__ import annotations
 import importlib.util
+import os
 from pathlib import Path
 import platform
 import sys
@@ -21,6 +22,7 @@ def choose_backend(config: dict) -> str:
 
 
 def transcribe(audio: Path, config: dict) -> dict:
+    os.environ["ORT_DISABLE_TELEMETRY"] = "1"
     backend = choose_backend(config)
     if backend == "mlx":
         import mlx_whisper

@@ -27,5 +27,7 @@ jobs:
         run: choco install ffmpeg --yes --no-progress
       - name: Check FFmpeg
         run: ffmpeg -version
+      - name: Install CPU speech detector (bundled model, no Whisper weights)
+        run: python -m pip install "faster-whisper>=1.2.1,<2"
       - name: Test synthetic projects and local installers
         run: python -m unittest discover -s tests -v

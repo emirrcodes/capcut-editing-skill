@@ -1,9 +1,10 @@
-# v0.1.0 validation
+# v0.2.0 validation
 
-- 20 automated tests passed locally on an Apple Silicon Mac with Python 3.13 and FFmpeg.
-- Skill frontmatter/package validation passed.
-- A synthetic Turkish voice recording was processed with the installed MLX Whisper large-v3-turbo model using the real transcription adapter. Preparation cut 0.409 seconds of silence from 7.782 seconds, produced 12 timestamped words, and validated two six-word semantic subtitle blocks over the proposed 7.373-second timeline. Only temporary synthetic project files were involved.
-- Automated tests exercise combined preparation/apply, four identical mirrors, alternate draft_content.json layouts, user-caption preservation, hard-cut timing, stale-input rejection, fault-injected recovery, checked restore, and all three local agent installers.
-- The GitHub Actions matrix runs the same synthetic-project tests on macOS, Windows, and Linux. Check the latest workflow status separately; local results do not imply those jobs passed.
-- Windows CapCut editor round-trip verification is pending. No claim is made that tests alone prove native editor compatibility across CapCut versions.
-- No actual user project was edited during package development. The public asset contains only blank subtitle schema/style defaults.
+- 27 automated tests passed locally on an Apple Silicon Mac with Python 3.12 and FFmpeg. The real bundled Silero VAD rejected generated stationary noise above the -30 dBFS silence threshold, with no Whisper model download.
+- Speech-mode tests cover sensitive gap review, weak-speech protection, padding, short natural pauses, long-gap windows, missing-dependency refusal, no-speech refusal, separate caption/cutting modes, identical draft mirrors, and speech-cut backup restoration.
+- A synthetic Turkish voice mixed with fan-like background noise at -25.19 dBFS was processed using real CPU Silero VAD. The amplitude method removed 0 seconds; speech scanning removed 5.501 seconds from 12.749 seconds, leaving 7.248 seconds. Three candidate gaps were reviewed, protecting three additional speech-edge regions.
+- The proposed noisy-recording timeline was transcribed by the real local MLX Whisper large-v3-turbo adapter. All 12 synthesized Turkish words were present, and two semantic six-word subtitle blocks passed timing/schema validation over the new 7.248-second timeline.
+- Skill frontmatter/package validation passed. Transcription adapters, preserved user text tracks, cut alignment, stale-input rejection, fault-injected recovery, alternate draft layouts, and all three agent installers remain covered.
+- The GitHub Actions matrix runs the synthetic-project suite, including the bundled CPU VAD test, on macOS, Windows, and Linux. Check the workflow status for the release commit separately; local results do not imply those jobs passed.
+- Windows CapCut editor round-trip verification is pending. Tests do not prove native editor compatibility across CapCut versions.
+- No actual user CapCut project was edited during development. All media/drafts used in tests were temporary synthetic artifacts; none are distributed.

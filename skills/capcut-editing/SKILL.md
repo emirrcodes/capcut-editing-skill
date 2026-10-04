@@ -1,15 +1,15 @@
 ---
 name: capcut-editing
-description: "Edit local CapCut Desktop projects by name or folder: remove silent source-audio ranges, close timeline gaps, and add editable phrase-based subtitles. Use for combined editing, silence-only, or subtitle-only requests, including audio-only projects. Works through local files and commands; does not require GUI control."
+description: "Edit local CapCut Desktop projects by name or folder: cut silence by audio level, cut non-speech using speech detection with gap review, and add editable phrase-based subtitles. Use separately or together, including audio-only projects. Works through local files and commands."
 ---
 
 # CapCut Editing
 
-Use the packaged scripts relative to this SKILL.md, not a personal workspace or another CapCut skill. This is the original amplitude-based workflow. Defaults: FFmpeg -30 dB / 0.25 s; merge silence gaps <=0.12 s; discard kept slices <0.10 s; Turkish lowercase captions, usually 4–6 words, maximum 6, white with black stroke. User requests override configurable presentation and detection defaults.
+Use the packaged scripts relative to this SKILL.md. Silence and non-speech are separate operations: FFmpeg -30 dB / 0.25 s for silence; local Silero VAD with a sensitive second pass over candidate gaps for non-speech. Default captions are Turkish lowercase, usually 4–6 words, maximum 6, white with black stroke. User requests override configurable presentation and detection defaults.
 
 ## Setup and scope
 
-Read [references/workflow.md](references/workflow.md) for commands and subtitle-spec details. Run scripts/setup.py with the platform-appropriate backend if needed, then use its reported virtualenv Python to run scripts/capcut_tool.py doctor. FFmpeg is a separate dependency. Use MLX Whisper on Apple Silicon, faster-whisper on Windows/Intel; use the common word-timestamp format produced by scripts/transcribe.py.
+Read [references/workflow.md](references/workflow.md) for commands, speech review, and subtitle-spec details. Run scripts/setup.py if needed, then use its reported virtualenv Python to run scripts/capcut_tool.py doctor. FFmpeg is a separate dependency. CPU Silero VAD is installed on all platforms; transcription uses MLX Whisper on Apple Silicon or faster-whisper on Windows/Intel.
 
 Resolve the exact project name or supplied path; require clarification only for a missing/ambiguous project. Inspect the current disk draft before every new request. Never reuse a prior transcript after user changes. Support single-timeline, forward 1.0x linear projects. The tool rejects encrypted drafts, inconsistent mirror copies, unsupported animated clips, and cutting a timeline with other populated user tracks. Subtitle-only operations preserve user tracks. Windows adaptation is experimental until verified in Windows CapCut; report that status honestly.
 
@@ -17,11 +17,12 @@ No computer/screen control is needed. Before apply/restore, CapCut must be close
 
 ## Execute the requested mode
 
-- Combined request (for example, “sessiz kısımları kes ve altyazı ekle” or “konuşma olmayan kısımları kes ve altyazı ekle”): prepare --mode both, create semantic subtitle ranges, preview, then apply in the same request.
-- “sessiz kısımları kes”, “konuşma olmayan kısımları kes”, or audio-only silence removal: prepare --mode silence, preview, apply. Do not add subtitles unless requested. Treat these as natural request variants while honestly stating the amplitude-based detection boundary if background noise matters.
+- “sessiz kısımları kes”: prepare --mode silence, preview, apply. Detect low audio level with FFmpeg; do not add subtitles unless requested.
+- “konuşmasız kısımları kes” / “konuşma olmayan kısımları kes”: prepare --mode speech, inspect speech-analysis.json and preview, apply. Scan for actual speech with VAD and review candidate gaps; never route this request to amplitude-only cutting or silently fall back when speech dependencies are missing.
 - “altyazı ekle”: prepare --mode subtitles against the current disk timeline, create semantic ranges, preview, apply. Do not change the media cuts.
+- Combined requests: silence + subtitles uses --mode both; non-speech + subtitles uses --mode speech-subtitles. Create semantic ranges from the newly cut timeline, preview, and apply in the same request.
 
-Use a fresh working directory outside the CapCut project and outside tracked package files. Preparation renders the proposed current timeline audio, transcribes it locally, and records file fingerprints without writing to the project. Read the resulting report and words.json. Run preview and resolve validation errors, then apply the user's authorized edit without adding a separate approval/review step. If source files changed, prepare and transcribe again. Apply commits all mirror copies together with timestamped backups and attempts recovery on failure. Report errors honestly, including backup paths if recovery is incomplete.
+Use a fresh working directory outside the CapCut project and tracked package files. Preparation records file fingerprints without writing to the project. Speech cutting scans the current timeline audio; caption modes transcribe the proposed timeline. Read the mode's report and words.json when generated. Run preview and resolve validation errors, then apply the user's authorized edit without adding a separate approval step. If source files changed, prepare again. Apply commits all mirror copies with timestamped backups and attempts recovery on failure.
 
 ## Semantic captions and cut alignment
 
@@ -35,6 +36,6 @@ The resulting codex_subtitles track contains native CapCut type: subtitle materi
 
 Report old/new/removed duration for cutting, caption count for subtitles, and the exact backup_suffix. Successful apply cleans temporary audio and transcripts. On failure, clean the managed work directory after diagnostics unless it is needed for an immediate retry. Mention that reopening CapCut reloads the disk changes. The result stays editable in CapCut; export is outside this skill.
 
-For explicit preferences, use an external JSON configuration based on [references/config.example.json](references/config.example.json). Prepare again after changing settings. See [references/workflow.md](references/workflow.md) for restore. Do not claim amplitude detection identifies speech in background noise; assess settings conservatively when noise is mentioned.
+For explicit preferences, use an external JSON configuration based on [references/config.example.json](references/config.example.json). Prepare again after changing settings. See [references/workflow.md](references/workflow.md) for restore and separate silence/speech controls.
 
-When the user describes fan/traffic/music/microphone noise, discuss the recording and inspect a short local audio sample when available. Help revise the threshold, minimum silence duration, and minimum kept duration using that evidence. If the first pass clipped quiet word endings, restore the pre-edit backup before recutting with safer settings: another pass on an already cut timeline cannot recover deleted source ranges. Do not present noise handling as a universal automatic fix.
+When noise or clipped speech is mentioned, inspect the current audio and the candidate removed/protected ranges, especially uncertain intervals. Help revise the selected mode's settings using that evidence. Lower VAD thresholds protect more possible speech; more padding protects word edges. VAD may retain background voices or singing and does not isolate the intended speaker. If a pass clipped words, restore the pre-edit backup before recutting: another pass cannot recover removed source ranges. A no-speech result stops without deleting the entire timeline.

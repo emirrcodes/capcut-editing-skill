@@ -1,4 +1,4 @@
 interface:
   display_name: "CapCut Editing Skill"
-  short_description: "Cut silence and add editable phrase-based captions"
-  default_prompt: "Use $capcut-editing to remove silent parts and add Turkish subtitles to my CapCut project."
+  short_description: "Cut silence or non-speech and add editable captions"
+  default_prompt: "Use $capcut-editing to remove non-speech parts and add Turkish subtitles to my CapCut project."

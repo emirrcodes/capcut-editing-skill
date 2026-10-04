@@ -35,7 +35,14 @@ DEFAULTS = {
     "font_size": 10.0, "color": [1.0, 1.0, 1.0],
     "stroke_color": [0.0, 0.0, 0.0], "stroke_width": 0.06,
     "caption_y": 0.58,
+    "speech_threshold": 0.5, "speech_review_threshold": 0.35,
+    "speech_min_duration": 0.10, "speech_min_gap": 0.30,
+    "speech_padding": 0.12, "speech_review_context": 0.40,
+    "speech_review_window": 30.0, "speech_review_max_gain": 4.0,
 }
+MODES = ("silence", "speech", "subtitles", "both", "speech-subtitles")
+CUT_MODES = {"silence", "speech", "both", "speech-subtitles"}
+CAPTION_MODES = {"subtitles", "both", "speech-subtitles"}
 SILENCE_RE = re.compile(r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)")
 WORK_MARKER = ".capcut-editing-work.json"
 
@@ -89,6 +96,13 @@ def validate_settings(config: dict) -> dict:
             raise RuntimeError(f"{key} must contain three color components in [0, 1]")
     if not isinstance(config["language"], str) or not config["language"]:
         raise RuntimeError("language must be a nonempty language code")
+    for key in ("speech_threshold", "speech_review_threshold", "speech_min_duration", "speech_min_gap", "speech_padding", "speech_review_context", "speech_review_window", "speech_review_max_gain"):
+        if type(config[key]) not in (int, float) or not math.isfinite(config[key]):
+            raise RuntimeError(f"Invalid numeric speech setting: {key}")
+    if not 0 < config["speech_review_threshold"] <= config["speech_threshold"] < 1:
+        raise RuntimeError("Speech review threshold must be <= primary speech threshold, both between 0 and 1")
+    if config["speech_min_duration"] <= 0 or config["speech_min_gap"] <= 0 or config["speech_padding"] < 0 or config["speech_review_context"] < 0 or config["speech_review_window"] < 1 or config["speech_review_max_gain"] < 1:
+        raise RuntimeError("Invalid speech duration, context, review window, padding, or gain")
     return config
 
 
@@ -236,12 +250,12 @@ def check_editable(draft: dict, mode: str) -> None:
             raise RuntimeError("Missing/invalid source range")
         if segment.get("common_keyframes") or segment.get("keyframe_refs"):
             raise RuntimeError("Animated/keyframed primary clips are unsupported")
-    if mode in {"both", "silence"}:
+    if mode in CUT_MODES:
         others = [t for t in draft["tracks"] if t is not primary and t.get("segments") and not (t.get("type") == "text" and t.get("name") == "codex_subtitles")]
         if others:
-            raise RuntimeError("Silence cutting supports a single media track with optional previous codex_subtitles. Other populated tracks are preserved by refusing the cut.")
+            raise RuntimeError("Cutting supports a single media track with optional previous codex_subtitles. Other populated tracks are preserved by refusing the cut.")
         if any(draft["materials"].get(key) for key in ("transitions", "video_transitions")):
-            raise RuntimeError("Remove existing transitions before silence cutting")
+            raise RuntimeError("Remove existing transitions before cutting")
 
 
 def media_for(draft: dict, project: Path, segment: dict) -> Path:
@@ -332,6 +346,27 @@ def extract_audio(draft: dict, project: Path, output: Path, config: dict) -> Non
         tolerance = max(0.02, len(parts) / 16000)
         if abs(actual - draft["duration"] / 1e6) > tolerance:
             raise RuntimeError("Rendered audio duration differs from the timeline; source audio may be truncated")
+
+
+def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[dict, dict]:
+    from speech_scan import analyze, merge
+    original_audio = work / "speech-original.wav"
+    extract_audio(draft, project, original_audio, config)
+    analysis = analyze(original_audio, config)
+    # Rendered PCM is rounded to audio samples; clamp the final microseconds
+    # to the actual timeline rather than inventing a gap at its end.
+    keep = merge([tuple(span) for span in analysis["keep_ranges_us"]], draft["duration"])
+    if not keep:
+        raise RuntimeError("Speech scanning produced no kept ranges")
+    if analysis["audio_duration_us"] - keep[-1][1] <= 1000:
+        keep[-1] = (keep[-1][0], draft["duration"])
+    analysis["keep_ranges_us"] = [list(span) for span in keep]
+    write_json(work / "speech-analysis.json", analysis)
+    output = copy.deepcopy(draft)
+    remove_previous_codex_subtitles(output)
+    apply_timeline_keep_ranges(output, keep)
+    validate(output)
+    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "speech_detection": analysis["method"], "reviewed_gap_windows": len(analysis["gap_reviews"]), "conservatively_protected_regions": len(analysis["conservatively_protected_ranges_us"])}
 
 
 def font_path(config: dict) -> str:
@@ -591,7 +626,9 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
     prepared = draft
     if mode in {"silence", "both"}:
         prepared, report = cut_silence(draft, project, config)
-    if mode in {"subtitles", "both"}:
+    elif mode in {"speech", "speech-subtitles"}:
+        prepared, report = cut_speech(draft, project, work, config)
+    if mode in CAPTION_MODES:
         font_path(config)
         audio = work / "timeline.wav"
         extract_audio(prepared, project, audio, config)
@@ -608,13 +645,13 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
     if (work / "transcript.json").is_file():
         plan["transcript_sha256"] = hashlib.sha256((work / "transcript.json").read_bytes()).hexdigest()
     write_json(work / "plan.json", plan)
-    return {**report, "operation": "prepared-without-project-writes", "mode": mode, "work_dir": str(work), "next": "Create semantic subtitles.json ranges from words.json, then apply" if mode != "silence" else "apply"}
+    return {**report, "operation": "prepared-without-project-writes", "mode": mode, "work_dir": str(work), "next": "Create semantic subtitles.json ranges from words.json, then apply" if mode in CAPTION_MODES else "Review speech-analysis.json and preview/apply" if mode == "speech" else "apply"}
 
 
 def load_plan(work: Path) -> dict:
     marker = read_json(work / WORK_MARKER)
     plan = read_json(work / "plan.json")
-    if plan.get("schema") != 1 or plan.get("mode") not in {"silence", "subtitles", "both"} or marker.get("project") != plan.get("project"):
+    if plan.get("schema") != 1 or plan.get("mode") not in MODES or marker.get("project") != plan.get("project"):
         raise RuntimeError("Unrecognized work directory/plan")
     if hashlib.sha256((work / "prepared.json").read_bytes()).hexdigest() != plan["prepared_sha256"]:
         raise RuntimeError("Prepared draft was modified; prepare again")
@@ -627,7 +664,7 @@ def build_result(work: Path, spec_path: Path | None) -> tuple[dict, dict, Path]:
     assert_snapshot(project, plan["snapshot"])
     draft = read_json(work / "prepared.json")
     config = settings_from_plan(plan)
-    if plan["mode"] != "silence":
+    if plan["mode"] in CAPTION_MODES:
         spec_path = spec_path or work / "subtitles.json"
         transcript_path = work / "transcript.json"
         spec = read_json(spec_path)
@@ -658,9 +695,9 @@ def apply(work: Path, spec_path: Path | None = None) -> dict:
             if key in meta:
                 meta[key] = draft["duration"]
         payloads[meta_path] = encoded(meta)
-    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "subtitles" if plan["mode"] == "subtitles" else "edit")
+    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit")
     report = {**plan["report"], "backup_suffix": suffix, "project": str(project), "mode": plan["mode"], "validation": validate(draft)}
-    if plan["mode"] != "silence":
+    if plan["mode"] in CAPTION_MODES:
         report.update(validate_subtitles(draft, plan["settings"]))
     cleanup(work)
     return report
@@ -668,7 +705,7 @@ def apply(work: Path, spec_path: Path | None = None) -> dict:
 
 def cleanup(work: Path) -> dict:
     read_json(work / WORK_MARKER)
-    for name in ("timeline.wav", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
+    for name in ("timeline.wav", "speech-original.wav", "speech-analysis.json", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
         path = work / name
         if path.is_file() or path.is_symlink():
             path.unlink()
@@ -678,7 +715,7 @@ def cleanup(work: Path) -> dict:
 
 
 def restore(project: Path, suffix: str) -> dict:
-    if not re.fullmatch(r"\.codex-(?:edit|silencecut|subtitles|restore)-\d{8}-\d{6}-\d{6}\.bak", suffix):
+    if not re.fullmatch(r"\.codex-(?:edit|silencecut|speechcut|subtitles|restore)-\d{8}-\d{6}-\d{6}\.bak", suffix):
         raise RuntimeError("Use the exact backup_suffix reported by this tool")
     manifest = read_json(project / ("capcut-backup" + suffix + ".json"))
     if manifest.get("schema") != 1 or manifest.get("suffix") != suffix:
@@ -708,6 +745,7 @@ def restore(project: Path, suffix: str) -> dict:
 
 def doctor(config: dict) -> dict:
     from transcribe import choose_backend
+    from speech_scan import available as speech_available
     try:
         font = font_path(config)
         font_error = None
@@ -719,7 +757,7 @@ def doctor(config: dict) -> dict:
     except RuntimeError as exc:
         backend, backend_error = None, str(exc)
     ffmpeg = shutil.which(config["ffmpeg"])
-    return {"python": platform.python_version(), "platform": platform.system(), "machine": platform.machine(), "ffmpeg": ffmpeg, "backend": backend, "backend_error": backend_error, "font": font, "font_error": font_error, "ready_for_silence": bool(ffmpeg), "ready_for_subtitles": bool(ffmpeg and backend and font), "mlx_whisper": importlib.util.find_spec("mlx_whisper") is not None, "faster_whisper": importlib.util.find_spec("faster_whisper") is not None, "default_draft_roots": [str(p) for p in default_roots()], "note": "Windows draft round-trip support needs real CapCut verification; no GUI automation is required"}
+    return {"python": platform.python_version(), "platform": platform.system(), "machine": platform.machine(), "ffmpeg": ffmpeg, "backend": backend, "backend_error": backend_error, "font": font, "font_error": font_error, "ready_for_silence": bool(ffmpeg), "ready_for_speech": bool(ffmpeg and speech_available()), "ready_for_subtitles": bool(ffmpeg and backend and font), "mlx_whisper": importlib.util.find_spec("mlx_whisper") is not None, "faster_whisper": importlib.util.find_spec("faster_whisper") is not None, "default_draft_roots": [str(p) for p in default_roots()], "note": "Windows draft round-trip support needs real CapCut verification; no GUI automation is required"}
 
 
 def main() -> None:
@@ -731,7 +769,7 @@ def main() -> None:
     inspect.add_argument("project")
     prep = commands.add_parser("prepare")
     prep.add_argument("project")
-    prep.add_argument("--mode", choices=("both", "silence", "subtitles"), default="both")
+    prep.add_argument("--mode", choices=MODES, default="both")
     prep.add_argument("--work-dir", type=Path, required=True)
     for name in ("preview", "apply"):
         command = commands.add_parser(name)
@@ -760,9 +798,11 @@ def main() -> None:
         elif args.command == "preview":
             draft, plan, project = build_result(args.work_dir.resolve(), args.spec)
             report = {**plan["report"], "project": str(project), "validation": validate(draft), "writes_project": False}
-            if plan["mode"] != "silence":
+            if plan["mode"] in CAPTION_MODES:
                 report.update(validate_subtitles(draft, plan["settings"]))
                 report.update(caption_preview(draft))
+            if plan["mode"] in {"speech", "speech-subtitles"}:
+                report["speech_analysis"] = read_json(args.work_dir / "speech-analysis.json")
         elif args.command == "apply":
             report = apply(args.work_dir.resolve(), args.spec)
         else:

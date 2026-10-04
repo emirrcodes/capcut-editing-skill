@@ -1,6 +1,6 @@
 # CapCut Editing Skill
 
-Remove silent parts and add editable, phrase-based subtitles to a local CapCut Desktop project using your AI agent. Supports video with embedded audio and audio-only projects. No mandatory manual editing step or computer-control tools.
+Cut silence, cut non-speech with speech detection, and add editable, phrase-based subtitles to a local CapCut Desktop project using your AI agent. Supports video with embedded audio and audio-only projects. No mandatory manual editing step or computer-control tools.
 
 ## Give this link to your agent
 
@@ -13,27 +13,33 @@ Open a new local project in **Claude Code, Cursor, or Codex**, then send:
 ## Kullanım
 
 ```text
-“proje adı” sessiz kısımları kes ve altyazı ekle
-“proje adı” konuşma olmayan kısımları kes ve altyazı ekle
 “proje adı” sessiz kısımları kes
-“proje adı” konuşma olmayan kısımları kes
+“proje adı” konuşmasız kısımları kes
 “proje adı” altyazı ekle
 ```
 
+| Komut | Ne yapar? |
+| --- | --- |
+| **sessiz kısımları kes** | Ses seviyesine göre keser: varsayılan eşik **−30 dBFS**, minimum sessizlik 0.25 saniye. |
+| **konuşmasız kısımları kes** | Konuşma modeliyle tarar; kesilecek aralıkları daha hassas ikinci geçişle kontrol eder. “Konuşma olmayan kısımları kes” de bu komutu çalıştırır. |
+| **altyazı ekle** | Mevcut timeline'a anlamlı, genellikle 4–6 kelimelik altyazılar ekler. |
+
+Birlikte de isteyebilirsiniz: `“proje adı” konuşmasız kısımları kes ve altyazı ekle` veya `“proje adı” sessiz kısımları kes ve altyazı ekle`.
+
 Agent, mevcut CapCut timeline'ını okur; birleşik istekte kesim ve altyazıyı birlikte hazırlar, doğrular ve uygular. Arada manuel kontrol zorunlu değildir. Sonuç CapCut içinde düzenlenebilir kalır. Proje adı belirsizse klasör yolunu verin. Yazma sırasında **CapCut kapalı olmalı**; sonra projeyi yeniden açın. Ekran/klavye/fare kontrolü gerekmez, yerel dosya ve komut erişimi gerekir.
 
-“Konuşma olmayan kısımları kes” de aynı kesme isteğinin doğal bir ifade biçimidir. Bu sürümde temel yöntem aşağıda açıklanan ses seviyesi analizidir; bu ifade gürültü altında otomatik konuşma algılama garantisi anlamına gelmez. Ortam sesini agenta tarif ederek yaklaşımı ve ayarları revize edebilirsiniz.
+**Konuşmasız kesim ses yüksekliğine göre karar vermez.** Yerel [Silero VAD](https://github.com/snakers4/silero-vad) modeli konuşma bölgelerini bulur. Aday konuşmasız aralıklar çevrelerindeki sesle birlikte tekrar taranır; düşük sesli bölümler analiz sırasında güçlendirilerek de kontrol edilir. İkinci geçişte bulunan olası konuşma korunur. Kelime kenarlarında varsayılan 0.12 saniye pay ve 0.30 saniyeden kısa doğal duraklamalar korunur. Bu, fan/trafik gibi gürültüyü konuşmadan ayırmayı amaçlar; başka konuşmalar veya şarkı da konuşma sayılabilir. Amaçlanan konuşmacıyı tek başına ayırma garantisi yoktur. Hiç konuşma bulunmazsa tüm videoyu silmek yerine işlem durur.
 
 Varsayılan altyazılar Türkçe, küçük harf, beyaz ve siyah konturludur. Anlamlı bloklar genellikle **4–6 kelime**, en fazla 6 kelimedir; kısa tam ifadeler daha kısa olabilir. Altyazılar boşluksuz ilerler. Klip değişiminde sonraki bağlamın metni önceki klipte görünmesin diye, kesimden en fazla 0.25 saniye önce başlayıp kesim sonrasına uzanan ilk kelimenin blok başlangıcı kesime hizalanır. Konuşma klipler arasında devam ediyorsa doğal ifade sınırları korunur.
 
-Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum ve sessizlik ayarları değiştirilebilir. Agentınıza tercihinizi söyleyin; references/config.example.json üzerinden dışarıda bir ayar dosyası oluşturabilir. Kullanıcı tercihleri varsayılanların önündedir.
+Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum, sessizlik ve konuşma algılama ayarları değiştirilebilir. Agentınıza tercihinizi söyleyin; references/config.example.json üzerinden dışarıda bir ayar dosyası oluşturabilir. Kullanıcı tercihleri varsayılanların önündedir.
 
-**Sessizlik kesme ses seviyesine dayanır:** FFmpeg `silencedetect=noise=-30dB:d=0.25`; arası ≤0.12 saniye sessizlikler birleştirilir, <0.10 saniye kalan parçalar atılır. Sessiz ortamda konuşma videoları için tasarlanmıştır. Ortam gürültüsü varsa agentınıza söyleyin: gürültülü konuşmasız bölümleri kaçırabilir; eşiği yükseltmek alçak sesli konuşmayı da kesebilir. Bu sürüm konuşma algılayan bir kesici olduğunu iddia etmez.
+**Sessizlik kesme ses seviyesine dayanır:** FFmpeg `silencedetect=noise=-30dB:d=0.25`; arası ≤0.12 saniye sessizlikler birleştirilir, <0.10 saniye kalan parçalar atılır. Ortam gürültüsü varsa gürültülü konuşmasız bölümleri kaçırabilir; eşiği yükseltmek alçak sesli konuşmayı da kesebilir. Böyle kayıtlarda konuşmasız kesim komutunu tercih edebilirsiniz.
 
-**Ortam sesine göre agentla konuşarak revize edebilirsiniz.** Fan, trafik, müzik veya mikrofon dip sesi olduğunu söyleyin; gerekirse kısa bir ses örneğini incelemesini isteyin. Agent sessizlik eşiğini, minimum sessizlik süresini ve kısa parçaların korunmasını kayda göre değerlendirebilir. İlk sonuç fazla sert veya fazla temkinliyse yedekten geri dönüp yeni ayarlarla hazırlamasını isteyebilirsiniz. Tek bir ayar her ortama uymaz; ses seviyesine dayalı yöntem bazı gürültülü kayıtlarda yeterli olmayabilir.
+**Ortam sesine göre agentla konuşarak revize edebilirsiniz.** Fan, trafik, müzik veya mikrofon dip sesi olduğunu söyleyin; gerekirse kesilecek aralıkları daha detaylı incelemesini isteyin. Agent seçilen yöntemin eşiğini, kelime kenarı paylarını ve kısa duraklamaların korunmasını kayda göre değerlendirebilir. İlk sonuç fazla sert veya fazla temkinliyse yedekten geri dönüp yeni ayarlarla hazırlamasını isteyebilirsiniz. Tek bir ayar her ortama uymaz.
 
 ```text
-“Bu kayıtta fan sesi var; sessizlik ayarlarını sesi inceleyerek revize et”
+“Bu kayıtta fan sesi var; konuşmasız kısımları kes, şüpheli aralıkları detaylı incele”
 “Kelime sonları fazla kesiliyor; daha temkinli ayarlarla yeniden hazırla”
 “Kısa doğal duraklamaları koru, uzun sessizlikleri kes”
 ```
@@ -44,7 +50,7 @@ Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum
 - **Windows / Intel macOS:** faster-whisper; CPU is the default, NVIDIA/CUDA optional. Windows path handling, installation and transcription adaptation are included; **Windows CapCut round-trip verification is pending**.
 - Python **3.10+**, FFmpeg, an installed font, and a local agent with file/terminal access are required. A browser-only chatbot without local access cannot edit your local CapCut files.
 
-Only the chosen speech engine is installed in an isolated virtualenv. The model downloads on first use; transcription inference runs locally. Model files are not included in the repository. Once a local agent reads the generated transcript, that text is subject to the agent provider's ordinary data handling; this package does not promise that the entire agent conversation stays offline.
+Setup installs CPU Silero VAD through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), plus MLX Whisper when selected, in an isolated virtualenv. The small VAD model comes with that dependency; speech-only cutting needs no Whisper transcription weights. The transcription model downloads on first caption use. Detection and transcription run locally; model files are not included in this repository. Once a local agent reads the generated transcript, that text is subject to the agent provider's ordinary data handling.
 
 Optional manual download: use **Code → Download ZIP**, extract, then:
 
@@ -66,10 +72,11 @@ The subtitle template contains schema/style defaults only: no personal project t
 ## Development
 
 ```sh
+python -m pip install "faster-whisper>=1.2.1,<2"
 python -m unittest discover -s tests -v
 python skills/capcut-editing/scripts/capcut_tool.py doctor
 ```
 
-Tests cover real FFmpeg cuts on generated audio, audio-only drafts, native-caption schema and hard-cut timing, preserved user tracks, stale-plan refusal, backup recovery/restore, alternate draft layouts, and installation for all three agents. Speech-engine adapters are tested without downloading models. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
+Tests cover real FFmpeg cuts, bundled VAD rejection of loud stationary noise, sensitive gap review, separate speech/caption modes, audio-only drafts, caption timing, preserved user tracks, stale-plan refusal, backup recovery/restore, alternate layouts, and all three agent installers. Transcription adapters are tested without downloading Whisper weights. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
 
 MIT licensed. See [LICENSE](LICENSE).
