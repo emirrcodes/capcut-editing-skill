@@ -40,7 +40,7 @@ DEFAULTS = {
     "speech_min_duration": 0.10, "speech_min_gap": 0.30,
     "speech_padding": 0.12, "speech_review_context": 0.40,
     "speech_review_window": 30.0, "speech_review_max_gain": 4.0,
-    "speech_word_review": False,
+    "speech_word_review": False, "speech_verify_cut": False, "speech_pause_review": False, "speech_reviewed_gaps": None,
 }
 MODES = ("silence", "speech", "subtitles", "both", "speech-subtitles")
 CUT_MODES = {"silence", "speech", "both", "speech-subtitles"}
@@ -90,9 +90,24 @@ def validate_settings(config: dict) -> dict:
             raise RuntimeError(f"Invalid numeric setting: {key}")
     if config["min_silence"] <= 0 or config["min_keep"] <= 0 or config["merge_gap"] < 0 or config["font_size"] <= 0 or config["stroke_width"] < 0:
         raise RuntimeError("Durations/font size must be positive; merge gap/stroke must be nonnegative")
-    for key in ("lowercase", "keep_terminal_punctuation", "speech_word_review"):
+    for key in ("lowercase", "keep_terminal_punctuation", "speech_word_review", "speech_verify_cut", "speech_pause_review"):
         if not isinstance(config[key], bool):
             raise RuntimeError(f"{key} must be true or false")
+    reviewed = config["speech_reviewed_gaps"]
+    if reviewed is not None:
+        if not isinstance(reviewed, dict) or set(reviewed) != {"draft_sha256", "ranges_us", "basis"} or reviewed["basis"] != "user-confirmed" or not isinstance(reviewed["draft_sha256"], str) or not re.fullmatch(r"[0-9a-f]{64}", reviewed["draft_sha256"]):
+            raise RuntimeError("Reviewed gaps require a current draft hash, explicit user-confirmed basis, and ranges_us")
+        if not isinstance(reviewed["ranges_us"], list) or not reviewed["ranges_us"]:
+            raise RuntimeError("Reviewed gap ranges must be nonempty")
+        end = 0
+        for span in reviewed["ranges_us"]:
+            if not isinstance(span, list) or len(span) != 2 or any(type(x) is not int for x in span) or not end <= span[0] < span[1]:
+                raise RuntimeError("Reviewed gaps must be ordered, non-overlapping integer microsecond ranges")
+            end = span[1]
+    if config["speech_verify_cut"] and not config["speech_word_review"]:
+        raise RuntimeError("speech_verify_cut requires speech_word_review")
+    if config["speech_pause_review"] and not (config["speech_word_review"] and config["speech_verify_cut"]):
+        raise RuntimeError("speech_pause_review requires speech_word_review and speech_verify_cut")
     for key in ("color", "stroke_color"):
         if not isinstance(config[key], list) or len(config[key]) != 3 or any(not isinstance(x, (int, float)) or not math.isfinite(x) or not 0 <= x <= 1 for x in config[key]):
             raise RuntimeError(f"{key} must contain three color components in [0, 1]")
@@ -246,7 +261,7 @@ def check_editable(draft: dict, mode: str) -> None:
     for segment in primary["segments"]:
         source = segment.get("source_timerange") or {}
         target = segment["target_timerange"]
-        if source.get("duration") != target["duration"] or abs(float(segment.get("speed", 1)) - 1) > 1e-9 or segment.get("reverse"):
+        if not isinstance(source.get("duration"), int) or abs(source["duration"] - target["duration"]) > 1 or abs(float(segment.get("speed", 1)) - 1) > 1e-9 or segment.get("reverse"):
             raise RuntimeError("Only forward 1.0x source clips are supported")
         if not isinstance(source.get("start"), int) or source["start"] < 0:
             raise RuntimeError("Missing/invalid source range")
@@ -333,9 +348,16 @@ def cut_silence(draft: dict, project: Path, config: dict) -> tuple[dict, dict]:
     return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "detected_silence_ranges": removed, "boundary_protection_ranges_us": boundary_protection}
 
 
-def extract_audio(draft: dict, project: Path, output: Path, config: dict) -> None:
+def extract_audio(draft: dict, project: Path, output: Path, config: dict) -> list[dict]:
     # Render each current source slice separately: bounded FFmpeg command sizes,
     # repeated source support, and identical behavior on Windows and macOS.
+    # CapCut can round a media tail up to a video frame. Normalize each
+    # individual slice, so a short tail cannot shift every later clip's words.
+    tolerance = 0.02
+    fps = draft.get("fps")
+    if primary_track(draft)["type"] == "video" and type(fps) in (int, float) and math.isfinite(fps) and fps > 0:
+        tolerance = max(tolerance, min(0.05, 1 / fps))
+    adjustments = []
     with tempfile.TemporaryDirectory(prefix="capcut-audio-") as temp:
         parts = []
         for index, segment in enumerate(primary_track(draft)["segments"]):
@@ -346,24 +368,40 @@ def extract_audio(draft: dict, project: Path, output: Path, config: dict) -> Non
         import wave
         with wave.open(str(output), "wb") as destination:
             destination.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
-            for part in parts:
+            for index, (part, segment) in enumerate(zip(parts, primary_track(draft)["segments"])):
+                expected = round(segment["source_timerange"]["duration"] / 1e6 * 16000)
                 with wave.open(str(part), "rb") as source:
-                    destination.writeframes(source.readframes(source.getnframes()))
+                    actual = source.getnframes()
+                    if actual == 0 or abs(expected - actual) > math.ceil(tolerance * 16000):
+                        raise RuntimeError("Rendered audio duration differs from the timeline; source audio may be truncated")
+                    frames = source.readframes(min(actual, expected))
+                if actual < expected:
+                    frames += b"\0\0" * (expected - actual)
+                destination.writeframes(frames)
+                if actual != expected:
+                    adjustments.append({"segment_index": index, "expected_samples": expected,
+                                        "decoded_samples": actual, "tail_padding_samples": max(0, expected - actual),
+                                        "tail_trim_samples": max(0, actual - expected)})
         with wave.open(str(output), "rb") as rendered:
             actual = rendered.getnframes() / rendered.getframerate()
         tolerance = max(0.02, len(parts) / 16000)
         if abs(actual - draft["duration"] / 1e6) > tolerance:
             raise RuntimeError("Rendered audio duration differs from the timeline; source audio may be truncated")
+    return adjustments
 
 
 def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[dict, dict]:
     from speech_scan import analyze, merge
     original_audio = work / "speech-original.wav"
-    extract_audio(draft, project, original_audio, config)
+    audio_alignment = extract_audio(draft, project, original_audio, config)
     analysis = analyze(original_audio, config)
+    analysis["audio_alignment"] = audio_alignment
     if config["speech_word_review"]:
         from speech_words import review
         analysis = review(original_audio, analysis, config, work)
+    if config["speech_pause_review"]:
+        from speech_pauses import review as review_pauses
+        analysis = review_pauses(original_audio, analysis, config, work)
     # Rendered PCM is rounded to audio samples; clamp the final microseconds
     # to the actual timeline rather than inventing a gap at its end.
     keep = merge([tuple(span) for span in analysis["keep_ranges_us"]], draft["duration"])
@@ -371,6 +409,16 @@ def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[di
         raise RuntimeError("Speech scanning produced no kept ranges")
     if analysis["audio_duration_us"] - keep[-1][1] <= 1000:
         keep[-1] = (keep[-1][0], draft["duration"])
+    reviewed = config["speech_reviewed_gaps"]
+    if reviewed:
+        from speech_scan import gaps
+        approved = reviewed["ranges_us"]
+        allowed = gaps([tuple(span) for span in approved], draft["duration"])
+        keep = merge([(max(left, start), min(right, end)) for left, right in keep for start, end in allowed], draft["duration"])
+        if not keep:
+            raise RuntimeError("Reviewed gaps would delete the whole timeline")
+        analysis["reviewed_non_speech_ranges_us"] = approved
+        analysis["reviewed_gap_basis"] = "user-confirmed"
     keep, boundary_protection = protect_cut_boundaries(draft, keep)
     analysis["keep_ranges_us"] = [list(span) for span in keep]
     from speech_scan import gaps
@@ -382,7 +430,13 @@ def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[di
     apply_timeline_keep_ranges(output, keep)
     validate(output)
     validate_cut_fragments(output, draft)
-    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "speech_detection": analysis["method"], "reviewed_gap_windows": len(analysis["gap_reviews"]), "conservatively_protected_regions": len(analysis["conservatively_protected_ranges_us"]), "boundary_protection_ranges_us": boundary_protection, "word_review": analysis.get("word_review")}
+    if config["speech_verify_cut"]:
+        from speech_verify import verify
+        candidate_audio = work / "speech-candidate.wav"
+        analysis["candidate_audio_alignment"] = extract_audio(output, project, candidate_audio, config)
+        analysis["cut_verification"] = verify(draft, output, project, analysis, candidate_audio, config, work)
+        write_json(work / "speech-analysis.json", analysis)
+    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "speech_detection": analysis["method"], "reviewed_gap_windows": len(analysis["gap_reviews"]), "conservatively_protected_regions": len(analysis["conservatively_protected_ranges_us"]), "boundary_protection_ranges_us": boundary_protection, "word_review": analysis.get("word_review"), "pause_review": analysis.get("pause_review"), "cut_verification": analysis.get("cut_verification")}
 
 
 def font_path(config: dict) -> str:
@@ -432,22 +486,12 @@ def transcript_words(transcript: dict, duration: int) -> list[dict]:
 
 
 def caption_starts(blocks: list[list[dict]], draft: dict) -> list[int]:
-    cuts = [s["target_timerange"]["start"] for s in primary_track(draft)["segments"][1:]]
-    starts = []
-    for block in blocks:
-        first = block[0]
-        start, end = round(first["start"] * 1e6), round(first["end"] * 1e6)
-        # Preserve the original hard-cut fix: crossing first word only, <=250ms.
-        candidates = [cut for cut in cuts if 0 < cut - start <= 250_000 and end > cut]
-        starts.append(min(candidates) if candidates else start)
-    starts[0] = 0
-    if any(right <= left for left, right in zip(starts, starts[1:])) or starts[-1] >= draft["duration"]:
-        raise RuntimeError("Subtitle starts collide after cut alignment; revise phrase blocks")
-    return starts
+    from subtitle_boundaries import boundary_plan
+    return boundary_plan(blocks,draft)["starts_us"]
 
 
-def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict) -> dict:
-    words = transcript_words(transcript, draft["duration"])
+def subtitle_blocks(transcript: dict, spec: dict, config: dict, duration: int) -> list[list[dict]]:
+    words = transcript_words(transcript, duration)
     ranges = spec.get("ranges", [])
     replacements = spec.get("replacements", {})
     if any(not str(index).isdigit() or not 1 <= int(index) <= len(words) or not isinstance(text, str) for index, text in replacements.items()):
@@ -472,6 +516,11 @@ def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict) ->
         cursor = end + 1
     if cursor != len(words) + 1 or not blocks:
         raise RuntimeError("Subtitle ranges must cover the entire transcript")
+    return blocks
+
+
+def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict) -> dict:
+    blocks=subtitle_blocks(transcript,spec,config,draft["duration"])
     result = copy.deepcopy(draft)
     remove_previous_codex_subtitles(result)
     template = read_json(HERE.parent / "assets/subtitle-template.json")
@@ -512,11 +561,11 @@ def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict) ->
         track["segments"].append(segment)
     result["tracks"].append(track)
     validate(result)
-    validate_subtitles(result, config)
+    validate_subtitles(result, config, source_blocks=blocks)
     return result
 
 
-def validate_subtitles(draft: dict, config: dict) -> dict:
+def validate_subtitles(draft: dict, config: dict, source_blocks=None) -> dict:
     tracks = [t for t in draft["tracks"] if t.get("type") == "text" and t.get("name") == "codex_subtitles"]
     if len(tracks) != 1 or not tracks[0].get("segments"):
         raise RuntimeError("Expected exactly one populated codex_subtitles track")
@@ -544,7 +593,9 @@ def validate_subtitles(draft: dict, config: dict) -> dict:
                 raise RuntimeError("Subtitle word timing lies outside its block")
     if cursor != draft["duration"]:
         raise RuntimeError("Subtitles do not cover 0 through project duration")
-    return {"subtitle_blocks": len(tracks[0]["segments"]), "duration_us": cursor}
+    from subtitle_boundaries import validate_boundaries
+    boundary_report=validate_boundaries(draft,source_blocks)
+    return {"subtitle_blocks": len(tracks[0]["segments"]), "duration_us": cursor, **boundary_report}
 
 
 def caption_preview(draft: dict) -> dict:
@@ -565,16 +616,23 @@ def is_capcut_running() -> bool:
     return result.returncode == 0
 
 
-def require_closed() -> None:
-    if is_capcut_running():
-        raise RuntimeError("Close CapCut before writing draft files, then rerun apply. No GUI control is used.")
+def require_project_closed(project_closed: bool = False) -> None:
+    # Process presence cannot identify which project is open. The flag records
+    # the user's confirmation about this target project, not an app-wide close.
+    if not project_closed and is_capcut_running():
+        raise RuntimeError("Close the target project before writing draft files. CapCut may stay open on its home screen or another project. After confirming the target is closed, rerun apply/restore with --project-closed. No GUI control is used.")
 
 
-def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation: str, verify_written=None) -> str:
-    require_closed()
+def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation: str, verify_written=None, *, project_closed: bool = False) -> str:
+    require_project_closed(project_closed)
     assert_snapshot(project, expected)
+    def current_stats():
+        return {name: ((project/name).stat().st_mtime_ns,(project/name).stat().st_size) for name in expected}
+    stable_stats=current_stats()
     time.sleep(0.25)
     assert_snapshot(project, expected)
+    if current_stats()!=stable_stats:
+        raise RuntimeError("Project file mtime/size changed during stability checks; save/close the target and prepare again")
     lock = project / ".capcut-editing.lock"
     try:
         descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -604,7 +662,9 @@ def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation
             handle.flush()
             os.fsync(handle.fileno())
         assert_snapshot(project, expected)
-        require_closed()
+        if current_stats()!=stable_stats:
+            raise RuntimeError("Project file mtime/size changed before writing; no draft payloads written")
+        require_project_closed(project_closed)
         try:
             for path, content in payloads.items():
                 atomic_write(path, content)
@@ -634,6 +694,14 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
     draft = read_json(paths[0])
     validate(draft)
     check_editable(draft, mode)
+    reviewed = config["speech_reviewed_gaps"]
+    if reviewed:
+        if mode not in {"speech", "speech-subtitles"}:
+            raise RuntimeError("Reviewed non-speech gaps are supported only in speech modes")
+        if reviewed["draft_sha256"] != before[paths[0].relative_to(project).as_posix()]["sha256"]:
+            raise RuntimeError("Reviewed gap times belong to another draft version; re-read and review the current timeline")
+        if reviewed["ranges_us"][-1][1] > draft["duration"]:
+            raise RuntimeError("Reviewed gap lies outside the current timeline")
     if project.resolve().is_relative_to(work.resolve()) or work.resolve().is_relative_to(project.resolve()):
         raise RuntimeError("The work directory must be outside the CapCut project")
     if work.exists() and any(work.iterdir()):
@@ -649,7 +717,7 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
     if mode in CAPTION_MODES:
         font_path(config)
         audio = work / "timeline.wav"
-        extract_audio(prepared, project, audio, config)
+        report["audio_alignment"] = extract_audio(prepared, project, audio, config)
         if do_transcribe:
             from transcribe import transcribe
             transcript = transcribe(audio, config)
@@ -695,6 +763,50 @@ def build_result(work: Path, spec_path: Path | None) -> tuple[dict, dict, Path]:
     return draft, plan, project
 
 
+
+def review_transcript(work: Path, review_path: Path) -> dict:
+    """Stage bounded current-audio corrections and retain original/evidence files."""
+    plan=load_plan(work); project=Path(plan["project"]).resolve()
+    assert_snapshot(project,plan["snapshot"])
+    if plan["mode"] not in CAPTION_MODES:
+        raise RuntimeError("Transcript review requires a caption preparation")
+    payload=read_json(review_path)
+    if set(payload)!={"transcript_sha256","audio_ranges_us","transcript","note"} or not isinstance(payload["note"],str) or not payload["note"].strip():
+        raise RuntimeError("Transcript review requires its current hash, audio ranges, transcript and evidence note")
+    old_bytes=(work/"transcript.json").read_bytes(); before_sha=hashlib.sha256(old_bytes).hexdigest()
+    if payload["transcript_sha256"]!=before_sha or before_sha!=plan.get("transcript_sha256"):
+        raise RuntimeError("Transcript review is stale; use the current preparation hash")
+    prepared=read_json(work/"prepared.json"); duration=prepared["duration"]
+    ranges=payload["audio_ranges_us"]
+    if not isinstance(ranges,list) or not ranges:
+        raise RuntimeError("Transcript review needs explicit current-audio intervals")
+    previous=0
+    for span in ranges:
+        if not isinstance(span,list) or len(span)!=2 or any(type(x) is not int for x in span) or not previous<=span[0]<span[1]<=duration:
+            raise RuntimeError("Transcript review ranges must be ordered integer microseconds within the timeline")
+        previous=span[1]
+    old=transcript_words(read_json(work/"transcript.json"),duration)
+    revised=payload["transcript"]; words=transcript_words(revised,duration)
+    def outside(items):
+        return [item for item in items if not any(round(item["end"]*1e6)>=left and round(item["start"]*1e6)<=right for left,right in ranges)]
+    if outside(old)!=outside(words):
+        raise RuntimeError("Transcript review changed words outside its reviewed current-audio intervals")
+    archive=work/("transcript-before-review-"+before_sha+".json")
+    with archive.open("xb") as handle:handle.write(old_bytes)
+    evidence=work/("transcript-review-"+before_sha+".json")
+    with evidence.open("xb") as handle:handle.write(encoded(payload))
+    new_bytes=encoded(revised); after_sha=hashlib.sha256(new_bytes).hexdigest()
+    report={"note":payload["note"],"audio_ranges_us":ranges,"original_word_count":len(old),"reviewed_word_count":len(words),
+            "before_transcript_sha256":before_sha,"after_transcript_sha256":after_sha,"writes_project":False,"review_archives_retained":True}
+    cuts=[segment["target_timerange"]["start"] for segment in primary_track(prepared)["segments"][1:]]
+    assert_snapshot(project,plan["snapshot"])
+    atomic_write(work/"transcript.json",new_bytes)
+    write_json(work/"words.json",{"duration_us":duration,"clip_cuts_us":cuts,"transcript_sha256":after_sha,"words":[{"index":i,**word} for i,word in enumerate(words,1)]})
+    plan["transcript_sha256"]=after_sha; plan["report"]["transcript_review"]=report
+    write_json(work/"plan.json",plan)
+    return report
+
+
 def settings_from_plan(plan: dict) -> dict:
     # Validate saved settings with the same rules, without trusting arbitrary files.
     config = settings()
@@ -704,12 +816,17 @@ def settings_from_plan(plan: dict) -> dict:
     return validate_settings(config)
 
 
-def apply(work: Path, spec_path: Path | None = None) -> dict:
+def apply(work: Path, spec_path: Path | None = None, *, project_closed: bool = False) -> dict:
     draft, plan, project = build_result(work, spec_path)
     original = read_json(draft_paths(project)[0])
+    raw_blocks = None
+    if plan["mode"] in CAPTION_MODES:
+        raw_blocks=subtitle_blocks(read_json(work/"transcript.json"),read_json(spec_path or work/"subtitles.json"),plan["settings"],draft["duration"])
     def verify_written():
         current = read_json(draft_paths(project)[0])
         validate(current)
+        if raw_blocks is not None:
+            validate_subtitles(current,plan["settings"],source_blocks=raw_blocks)
         if plan["mode"] in CUT_MODES:
             validate_cut_fragments(current, original)
     payload = encoded(draft)
@@ -721,17 +838,17 @@ def apply(work: Path, spec_path: Path | None = None) -> dict:
             if key in meta:
                 meta[key] = draft["duration"]
         payloads[meta_path] = encoded(meta)
-    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit", verify_written=verify_written)
+    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit", verify_written=verify_written, project_closed=project_closed)
     report = {**plan["report"], "backup_suffix": suffix, "project": str(project), "mode": plan["mode"], "validation": validate(draft)}
     if plan["mode"] in CAPTION_MODES:
-        report.update(validate_subtitles(draft, plan["settings"]))
+        report.update(validate_subtitles(draft, plan["settings"],source_blocks=raw_blocks))
     cleanup(work)
     return report
 
 
 def cleanup(work: Path) -> dict:
     read_json(work / WORK_MARKER)
-    for name in ("timeline.wav", "speech-original.wav", "speech-analysis.json", "speech-word-transcript.json", "speech-word-recheck.json", "speech-word-review.wav", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
+    for name in ("speech-pause-audit.json", "speech-pause-review.wav", "speech-long-word-review.wav", "speech-long-word-rechecks.json", "speech-candidate.wav", "speech-candidate-transcript.json", "speech-cut-verification.json", "timeline.wav", "speech-original.wav", "speech-analysis.json", "speech-word-transcript.json", "speech-word-recheck.json", "speech-word-review.wav", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
         path = work / name
         if path.is_file() or path.is_symlink():
             path.unlink()
@@ -740,7 +857,7 @@ def cleanup(work: Path) -> dict:
     return {"temporary_files_cleaned": True}
 
 
-def restore(project: Path, suffix: str) -> dict:
+def restore(project: Path, suffix: str, *, project_closed: bool = False) -> dict:
     if not re.fullmatch(r"\.codex-(?:edit|silencecut|speechcut|subtitles|restore)-\d{8}-\d{6}-\d{6}\.bak", suffix):
         raise RuntimeError("Use the exact backup_suffix reported by this tool")
     manifest = read_json(project / ("capcut-backup" + suffix + ".json"))
@@ -765,7 +882,7 @@ def restore(project: Path, suffix: str) -> dict:
     if len({payloads[path] for path in mirrors}) != 1:
         raise RuntimeError("Backup draft copies differ")
     validate(json.loads(payloads[mirrors[0]]))
-    current_backup = commit(project, payloads, expected, "restore")
+    current_backup = commit(project, payloads, expected, "restore", project_closed=project_closed)
     return {"restored_backup": suffix, "pre_restore_backup_suffix": current_backup}
 
 
@@ -801,9 +918,15 @@ def main() -> None:
         command = commands.add_parser(name)
         command.add_argument("work_dir", type=Path)
         command.add_argument("--spec", type=Path)
+        if name == "apply":
+            command.add_argument("--project-closed", action="store_true", help="User confirmed the target project is closed; CapCut may remain open")
     undo = commands.add_parser("restore")
     undo.add_argument("project")
     undo.add_argument("--backup", required=True)
+    undo.add_argument("--project-closed", action="store_true", help="User confirmed the target project is closed; CapCut may remain open")
+    review = commands.add_parser("review-transcript")
+    review.add_argument("work_dir", type=Path)
+    review.add_argument("--review", type=Path, required=True)
     clean = commands.add_parser("cleanup")
     clean.add_argument("work_dir", type=Path)
     args = parser.parse_args()
@@ -820,17 +943,20 @@ def main() -> None:
             elif args.command == "prepare":
                 report = prepare(project, args.mode, args.work_dir.resolve(), config)
             else:
-                report = restore(project, args.backup)
+                report = restore(project, args.backup, project_closed=args.project_closed)
         elif args.command == "preview":
             draft, plan, project = build_result(args.work_dir.resolve(), args.spec)
             report = {**plan["report"], "project": str(project), "validation": validate(draft), "writes_project": False}
             if plan["mode"] in CAPTION_MODES:
-                report.update(validate_subtitles(draft, plan["settings"]))
+                raw_blocks=subtitle_blocks(read_json(args.work_dir/"transcript.json"),read_json(args.spec or args.work_dir/"subtitles.json"),plan["settings"],draft["duration"])
+                report.update(validate_subtitles(draft, plan["settings"],source_blocks=raw_blocks))
                 report.update(caption_preview(draft))
             if plan["mode"] in {"speech", "speech-subtitles"}:
                 report["speech_analysis"] = read_json(args.work_dir / "speech-analysis.json")
+        elif args.command == "review-transcript":
+            report = review_transcript(args.work_dir.resolve(),args.review.resolve())
         elif args.command == "apply":
-            report = apply(args.work_dir.resolve(), args.spec)
+            report = apply(args.work_dir.resolve(), args.spec, project_closed=args.project_closed)
         else:
             report = cleanup(args.work_dir.resolve())
         print(json.dumps(report, ensure_ascii=False, indent=2))

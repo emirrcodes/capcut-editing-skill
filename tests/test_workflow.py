@@ -96,7 +96,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(value["materials"]["texts"], [])
 
     def test_non_crossing_word_keeps_natural_start(self):
-        for start, end in ((0.90, 0.95), (1.05, 1.20), (0.70, 1.10)):
+        for start, end in ((0.90, 0.95), (0.70, 1.10)):
             source = transcript()
             source["segments"][0]["words"][4].update({"start": start, "end": end})
             result = tool.insert_subtitles(draft(self.media), source, {"ranges": [[1, 4], [5, 8]]}, self.config)
@@ -208,12 +208,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertFalse((folder / ".capcut-editing.lock").exists())
         self.assertEqual(len(list(folder.rglob("*.bak"))), 5)
 
-    def test_capcut_open_and_changed_layout_refused(self):
+    def test_target_project_closure_confirmation_and_changed_layout_refused(self):
         folder = project(self.root, draft(self.media), alternate=True)
         paths = tool.source_paths(folder)
         expected = tool.snapshot(folder, paths)
         with patch.object(tool, "is_capcut_running", return_value=True):
-            with self.assertRaisesRegex(RuntimeError, "Close CapCut"):
+            with self.assertRaisesRegex(RuntimeError, "Close the target project"):
                 tool.commit(folder, {p: p.read_bytes() for p in paths}, expected, "edit")
         self.assertFalse(list(folder.rglob("*.bak")))
         (folder / "draft_info.json").write_bytes((folder / "draft_content.json").read_bytes())

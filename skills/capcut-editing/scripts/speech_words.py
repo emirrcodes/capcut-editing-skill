@@ -1,6 +1,8 @@
 """Optional ASR cross-check of speech cuts; word times protect, never prove cuts."""
 from __future__ import annotations
 import math
+import re
+from difflib import SequenceMatcher
 from pathlib import Path
 import wave
 
@@ -66,6 +68,61 @@ def word_protection(words: list[dict], speech: list[tuple[int, int]], duration: 
     return merge(protected, duration)
 
 
+def refine_long_words(audio: Path, words: list[dict], duration: int, config: dict, work: Path, speech: list[tuple[int, int]] | None = None) -> tuple[list[dict], list[dict]]:
+    """Refine stretched word times with one independent contextual recheck.
+
+    A missing token never licenses removal. Replace a long interval only when
+    an independently recognized matching word has a shorter valid interval.
+    Keep all other trusted words recovered in that same context.
+    """
+    from capcut_tool import write_json
+    from draft_primitives import turkish_lower
+    normalized = lambda text: re.sub(r"[^\w]+", "", turkish_lower(str(text)))
+    output, reviews = [], []
+    temporary = work / "speech-long-word-review.wav"
+    try:
+        for word in words:
+            word_length = word["end_us"] - word["start_us"]
+            overlap = sum(end-start for start,end in merge([(max(word["start_us"], left), min(word["end_us"], right)) for left,right in (speech or [])], duration))
+            weak_stretched = speech is not None and word_length >= 500_000 and overlap < max(100_000, round(word_length * .35))
+            if word_length <= 1_500_000 and not weak_stretched:
+                output.append(word)
+                continue
+            # Do not introduce an unbounded retry for abnormal long decodes.
+            if word["end_us"] - word["start_us"] > 30_000_000:
+                output.append(word)
+                reviews.append({"original_word": word, "status": "unresolved-kept", "reason": "Word interval exceeds bounded contextual review"})
+                continue
+            left = max(0, word["start_us"] - 400_000)
+            right = min(duration, word["end_us"] + 400_000)
+            extract_window(audio, temporary, left, right)
+            result = transcribe(temporary, config, speech_review=True)
+            local, suspects = trusted_words(result, duration, left)
+            matches = [candidate for candidate in local
+                       if candidate["end_us"] - candidate["start_us"] <= 1_500_000
+                       and candidate["end_us"] - candidate["start_us"] < word_length
+                       and candidate["end_us"] > word["start_us"] and candidate["start_us"] < word["end_us"]
+                       and SequenceMatcher(None, normalized(word["word"]), normalized(candidate["word"]), autojunk=False).ratio() >= .85]
+            uncertain = any(end > word["start_us"] and start < word["end_us"] for start, end in suspects)
+            accepted = bool(matches) and not uncertain
+            if accepted:
+                output.extend(local)
+            else:
+                output.append(word)
+                output.extend(local)
+            reviews.append({"original_word": word, "context_range_us": [left, right],
+                            "status": "refined" if accepted else "unresolved-kept",
+                            "matching_words": matches, "recovered_words": local,
+                            "suspect_ranges_us": [list(span) for span in suspects], "transcript": result})
+    finally:
+        temporary.unlink(missing_ok=True)
+    unique = {}
+    for word in output:
+        unique[(word["start_us"], word["end_us"], normalized(word["word"]))] = word
+    write_json(work / "speech-long-word-rechecks.json", {"windows": reviews})
+    return list(unique.values()), reviews
+
+
 def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
     from capcut_tool import write_json
     duration = analysis["audio_duration_us"]
@@ -93,7 +150,10 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
     finally:
         temporary.unlink(missing_ok=True)
     write_json(work / "speech-word-recheck.json", {"windows": rechecks})
+    original_stretched = [[word["start_us"], word["end_us"]] for word in words
+                          if word["end_us"] - word["start_us"] > 1_500_000]
     speech = merge([tuple(span) for key in ("speech_ranges_us", "conservatively_protected_ranges_us") for span in analysis[key]], duration)
+    words, long_reviews = refine_long_words(audio, words, duration, config, work, speech)
     protected = word_protection(words, speech, duration)
     stretched = [[word["start_us"], word["end_us"]] for word in words
                  if word["end_us"] - word["start_us"] > 1_500_000]
@@ -107,6 +167,8 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                    "word_review": {"trusted_word_count": len(words), "suspect_ranges_us": [list(span) for span in suspects],
                                    "independent_rechecks": len(rechecks), "protected_word_ranges_us": [list(span) for span in protected],
                                    "long_word_timing_ranges_us": stretched,
+                                   "original_long_word_timing_ranges_us": original_stretched,
+                                   "long_word_reviews": [{key: value for key, value in item.items() if key != "transcript"} for item in long_reviews],
                                    "unresolved_kept_ranges_us": [list(span) for span in uncertain],
                                    "note": "Suspicious compressed/repeated ASR text is rechecked, never trusted automatically. Unresolved intervals are kept for closer inspection. Transcript differences alone do not prove audio loss."}})
     return output

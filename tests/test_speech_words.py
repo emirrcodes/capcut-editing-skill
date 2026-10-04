@@ -45,6 +45,54 @@ class WordReviewTests(unittest.TestCase):
             report = speech_words.review(self.media, self.analysis(), self.config, work)
         self.assertEqual(report["word_review"]["long_word_timing_ranges_us"], [[0, 2_000_000]])
 
+    def test_stretched_weak_word_gets_local_timing_instead_of_preserving_pause(self):
+        work = self.root / "refined-word"; work.mkdir()
+        original = {"segments": [segment(0, 2, [("panzehirin", 0, 2)])]}
+        local = {"segments": [segment(1.5, 1.95, [("hani", 1.5, 1.75), ("panzehrin", 1.75, 1.95)])]}
+        analysis = self.analysis()
+        analysis.update({"speech_ranges_us": [[1_700_000, 2_000_000]], "keep_ranges_us": [[1_670_000, 2_000_000]]})
+        with patch.object(speech_words, "transcribe", side_effect=[original, local]) as engine:
+            result = speech_words.review(self.media, analysis, self.config, work)
+        self.assertEqual(engine.call_count, 2)
+        self.assertEqual(result["word_review"]["long_word_reviews"][0]["status"], "refined")
+        self.assertEqual(result["keep_ranges_us"], [[1_480_000, 2_000_000]])
+        self.assertTrue((work / "speech-long-word-rechecks.json").exists())
+    def test_half_second_weak_word_also_gets_context_review(self):
+        work=self.root/'weak-time';work.mkdir()
+        words=[{"word":"hani","start_us":300_000,"end_us":1_100_000}]
+        local={"segments":[segment(.85,1.1,[("hani",.85,1.1)])]}
+        with patch.object(speech_words,"transcribe",return_value=local) as engine:
+            result,reviews=speech_words.refine_long_words(self.media,words,2_000_000,self.config,work,[(1_000_000,1_100_000)])
+        self.assertEqual(engine.call_count,1)
+        self.assertEqual(reviews[0]["status"],"refined")
+        self.assertEqual(result[0]["start_us"],850_000)
+
+    def test_missing_long_word_in_local_recognition_is_kept(self):
+        work = self.root / "missing-long"; work.mkdir()
+        original = {"segments": [segment(0, 2, [("word", 0, 2)])]}
+        with patch.object(speech_words, "transcribe", side_effect=[original, {"segments": []}]) as engine:
+            result = speech_words.review(self.media, self.analysis(), self.config, work)
+        self.assertEqual(engine.call_count, 2)
+        self.assertEqual(result["word_review"]["long_word_reviews"][0]["status"], "unresolved-kept")
+        self.assertEqual(result["keep_ranges_us"], [[0, 2_000_000]])
+    def test_suspect_local_decode_cannot_shrink_original_word(self):
+        work = self.root / "suspect-local"; work.mkdir()
+        original = {"segments": [segment(0, 2, [("word", 0, 2)])]}
+        local = {"segments": [segment(1.7, 2, [("word", 1.7, 2)], 5.0)]}
+        with patch.object(speech_words, "transcribe", side_effect=[original, local]):
+            result = speech_words.review(self.media, self.analysis(), self.config, work)
+        self.assertEqual(result["word_review"]["long_word_reviews"][0]["status"], "unresolved-kept")
+        self.assertEqual(result["keep_ranges_us"], [[0, 2_000_000]])
+    def test_local_refinement_preserves_repeated_words_and_false_start(self):
+        work = self.root / "local-repeats"; work.mkdir()
+        original = [{"word": "ama", "start_us": 0, "end_us": 2_000_000}]
+        local = {"segments": [segment(0, 2, [("ama", .1, .3), ("abi", .6, .8), ("ama", 1.6, 1.8)])]}
+        with patch.object(speech_words, "transcribe", return_value=local) as engine:
+            words, reviews = speech_words.refine_long_words(self.media, original, 2_000_000, self.config, work)
+        self.assertEqual(engine.call_count, 1)
+        self.assertEqual([word["word"] for word in words], ["ama", "abi", "ama"])
+        self.assertEqual(reviews[0]["status"], "refined")
+
     def test_compressed_repetition_is_rechecked_without_trusting_original_words(self):
         work = self.root / "word-review"
         work.mkdir()

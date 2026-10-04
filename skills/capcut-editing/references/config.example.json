@@ -8,13 +8,13 @@
   "noise_db": -30,
   "min_silence": 0.25,
   "merge_gap": 0.12,
-  "min_keep": 0.10,
+  "min_keep": 0.1,
   "speech_threshold": 0.5,
   "speech_review_threshold": 0.35,
-  "speech_min_duration": 0.10,
-  "speech_min_gap": 0.30,
+  "speech_min_duration": 0.1,
+  "speech_min_gap": 0.3,
   "speech_padding": 0.12,
-  "speech_review_context": 0.40,
+  "speech_review_context": 0.4,
   "speech_review_window": 30.0,
   "speech_review_max_gain": 4.0,
   "speech_word_review": false,
@@ -23,8 +23,19 @@
   "keep_terminal_punctuation": false,
   "font_path": null,
   "font_size": 10,
-  "color": [1, 1, 1],
-  "stroke_color": [0, 0, 0],
+  "color": [
+    1,
+    1,
+    1
+  ],
+  "stroke_color": [
+    0,
+    0,
+    0
+  ],
   "stroke_width": 0.06,
-  "caption_y": 0.58
+  "caption_y": 0.58,
+  "speech_verify_cut": false,
+  "speech_reviewed_gaps": null,
+  "speech_pause_review": false
 }

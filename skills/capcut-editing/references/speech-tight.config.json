@@ -1,0 +1,10 @@
+{
+  "speech_threshold": 0.5,
+  "speech_min_duration": 0.08,
+  "speech_min_gap": 0.08,
+  "speech_padding": 0.03,
+  "speech_word_review": true,
+  "speech_verify_cut": true,
+  "speech_review_threshold": 0.35,
+  "speech_pause_review": true
+}
