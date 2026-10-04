@@ -131,6 +131,36 @@ def context_word_guards(records, speech, duration):
     return merge(guards,duration),evidence
 
 
+def refine_crossing_words(crossing, evidence):
+    """Use corroborated uncropped weak-word intervals to resolve stale spans.
+
+    All corresponding independent guards remain protected in the cut plan.
+    Cropped prefix/suffix recognition alone never establishes this refinement.
+    Short crossing words stay untouched; competing bounded contexts retain
+    their union, so another observation cannot erase an earlier weak prefix.
+    """
+    refined, decisions = [], []
+    for word in crossing:
+        left,right=word["start_us"],word["end_us"]
+        matches=[record for record in evidence
+                 if right-left>750_000
+                 and token(word["word"])==token(record["word"]["word"])
+                 and abs(right-record["word"]["end_us"])<=120_000
+                 and min(right,record["word"]["end_us"])-max(left,record["word"]["start_us"])>=40_000]
+        if matches:
+            start=min(record["word"]["start_us"] for record in matches)
+            end=max(record["word"]["end_us"] for record in matches)
+            if 0<end-start<=750_000 and end-start+120_000<right-left:
+                new={**word,"start_us":start,"end_us":end}
+                refined.append(new)
+                decisions.append({"original_word":word,"refined_word":new,
+                                  "context_guards_us":[record["guard_us"] for record in matches],
+                                  "evidence_context_indexes":[record["context_index"] for record in matches]})
+                continue
+        refined.append(word)
+    return refined,decisions
+
+
 def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
     from capcut_tool import write_json, read_json
     duration = analysis["audio_duration_us"]; minimum = round(config["speech_min_gap"] * 1e6)
@@ -175,6 +205,8 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                 for record in records:
                     if record["core_us"][0] <= a and record["core_us"][1] >= b:
                         crossing.extend(w for w in record["words"] if w["end_us"] > a and w["start_us"] < b)
+                refined_crossing,word_refinements = refine_crossing_words(crossing,context_evidence)
+                effective_crossing=[w for w in refined_crossing if w["end_us"]>a and w["start_us"]<b]
                 sides = []; side_records = []
                 for label,first,last in (("prefix",max(0,a-2_500_000),a), ("suffix",b,min(duration,b+2_500_000))):
                     if last-first < 100_000:
@@ -192,14 +224,15 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                     sides.append((words,suspects))
                     side_records.append({"side":label,"range_us":[first,last],"words":words,
                                          "suspect_ranges_us":suspects,"transcript":result})
-                accepted, reason = anchored(crossing,sides[0][0],sides[1][0])
-                if any(a <= word["start_us"] and word["end_us"] <= b for word in crossing):
+                accepted, reason = anchored(effective_crossing,sides[0][0],sides[1][0])
+                if any(a <= word["start_us"] and word["end_us"] <= b for word in effective_crossing):
                     accepted,reason = False,"weak-word-inside-gap-kept"
                 if sides[0][1] or sides[1][1]:
                     accepted,reason = False,"suspect-side-kept"
                 if accepted: confirmed.append((a,b))
                 decisions.append({"range_us":[a,b],"status":"remove" if accepted else "no-additional-cut",
-                                  "reason":reason,"crossing_words":crossing,"side_reviews":side_records})
+                                  "reason":reason,"crossing_words":crossing,"effective_crossing_words":effective_crossing,
+                                  "context_word_refinements":word_refinements,"side_reviews":side_records})
         report = {"method":"overlapping-context-vad-and-word-anchors", "duration_us":duration,
                   "window_count":len(records),"minimum_independent_coverage":min(p["coverage"] for p in parts),
                   "confirmed_non_speech_ranges_us":confirmed,"decisions":decisions,

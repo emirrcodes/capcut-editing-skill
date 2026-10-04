@@ -39,6 +39,24 @@ def trusted_words(result: dict, duration: int, offset: int = 0) -> tuple[list[di
     return words, merge(suspects, duration)
 
 
+def segment_words(result: dict, duration: int, offset: int = 0) -> tuple[list[dict], list[tuple[int, int]]]:
+    """A malformed word quarantines its bounded segment, not the full decode.
+
+    Whisper may return zero-length word alignments on real recordings. They
+    cannot establish speech boundaries. Recheck the segment independently and
+    preserve it if unresolved. Invalid segment bounds still stop the operation.
+    """
+    words, suspects = [], []
+    for segment in result.get("segments", []):
+        try:
+            found, uncertain = trusted_words({"segments": [segment]}, duration, offset)
+            words.extend(found); suspects.extend(uncertain)
+        except (RuntimeError, KeyError, TypeError, ValueError, OverflowError):
+            suspects.append(interval(segment["start"] + offset / 1e6,
+                                     segment["end"] + offset / 1e6, duration))
+    return words, merge(suspects, duration)
+
+
 def extract_window(path: Path, output: Path, start: int, end: int) -> None:
     with wave.open(str(path), "rb") as source:
         rate = source.getframerate()
@@ -97,7 +115,7 @@ def refine_long_words(audio: Path, words: list[dict], duration: int, config: dic
             right = min(duration, word["end_us"] + 400_000)
             extract_window(audio, temporary, left, right)
             result = transcribe(temporary, config, speech_review=True)
-            local, suspects = trusted_words(result, duration, left)
+            local, suspects = segment_words(result, duration, left)
             matches = [candidate for candidate in local
                        if candidate["end_us"] - candidate["start_us"] <= 1_500_000
                        and candidate["end_us"] - candidate["start_us"] < word_length
@@ -128,7 +146,7 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
     duration = analysis["audio_duration_us"]
     original = transcribe(audio, config, speech_review=True)
     write_json(work / "speech-word-transcript.json", original)
-    words, suspects = trusted_words(original, duration)
+    words, suspects = segment_words(original, duration)
     unresolved, rechecks = [], []
     temporary = work / "speech-word-review.wav"
     try:
@@ -141,7 +159,7 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                 # No previous text is supplied; retries are bounded to one
                 # independent pass per window, never a transcription retry loop.
                 result = transcribe(temporary, config, speech_review=True)
-                new_words, new_suspects = trusted_words(result, duration, first)
+                new_words, new_suspects = segment_words(result, duration, first)
                 words.extend(word for word in new_words if word["end_us"] > cursor and word["start_us"] < finish)
                 uncertain = [(max(cursor, start), min(finish, end)) for start, end in new_suspects if min(finish, end) > max(cursor, start)]
                 unresolved.extend(uncertain)
