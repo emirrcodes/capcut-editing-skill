@@ -9,13 +9,17 @@ from pathlib import Path
 import shutil
 import tempfile
 
-AGENTS = {"codex": ".agents", "claude": ".claude", "cursor": ".cursor"}
+AGENTS = {"codex": ".agents", "claude": ".claude", "cursor": ".cursor", "antigravity": ".agents"}
+USER_AGENT_ROOTS = {"antigravity": ".gemini/config"}
 NAME = "capcut-editing"
 
 
-def install(agent: str, base: Path, replace: bool = False) -> dict:
+def install(agent: str, base: Path, replace: bool = False, *, scope: str = "project") -> dict:
     source = Path(__file__).resolve().parent / "skills" / NAME
-    parent = base.expanduser().resolve() / AGENTS[agent] / "skills"
+    if scope not in {"project", "user"}:
+        raise ValueError("Scope must be project or user")
+    directory = USER_AGENT_ROOTS.get(agent, AGENTS[agent]) if scope == "user" else AGENTS[agent]
+    parent = base.expanduser().resolve() / directory / "skills"
     destination = parent / NAME
     parent.mkdir(parents=True, exist_ok=True)
     if destination.is_symlink():
@@ -46,7 +50,7 @@ def main() -> None:
     parser.add_argument("--replace", action="store_true")
     args = parser.parse_args()
     try:
-        print(json.dumps(install(args.agent, Path.home() if args.scope == "user" else args.project, args.replace), indent=2))
+        print(json.dumps(install(args.agent, Path.home() if args.scope == "user" else args.project, args.replace, scope=args.scope), indent=2))
     except (RuntimeError, OSError) as exc:
         parser.exit(1, str(exc) + "\n")
 

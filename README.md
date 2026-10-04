@@ -14,9 +14,11 @@ Her sohbet servisi bağlantıları açamayabilir. Link açılamıyorsa rehberdek
 - Kullanacağınız yapay zekâ hizmetinde bir **hesap/üyelik**.
 - İlk kurulum ve konuşma modelinin indirilmesi için internet bağlantısı ve yeterli boş disk alanı.
 
-**Düzenlemeyi yapabilmek için yapay zekânın bilgisayarınızdaki dosyalara ve komut çalıştırmaya erişmesi gerekir.** Codex, Claude Code veya Cursor gibi yerel agentlarla çalışabilirsiniz. Yalnızca sohbet edebilen bir yapay zekâ da kurulumu açıklayabilir; yerel erişimi yoksa uygulayabileceğiniz adımları anlatmalı veya bu agentlardan birinde devam etmenize yardımcı olmalıdır. Linki göndermek tek başına otomatik kurulum yapmaz. Ekran, klavye veya fare kontrolü vermeniz gerekmez.
+**Düzenlemeyi yapabilmek için yapay zekânın bilgisayarınızdaki dosyalara ve komut çalıştırmaya erişmesi gerekir.** Codex, Claude Code, Cursor veya Antigravity gibi yerel agentlarla çalışabilirsiniz. Yalnızca sohbet edebilen bir yapay zekâ da kurulumu açıklayabilir; yerel erişimi yoksa uygulayabileceğiniz adımları anlatmalı veya bu agentlardan birinde devam etmenize yardımcı olmalıdır. Linki göndermek tek başına otomatik kurulum yapmaz. Ekran, klavye veya fare kontrolü vermeniz gerekmez.
 
 Python ve FFmpeg gibi yardımcı yazılımlar da gerekir; bunları önceden bilmeniz gerekmez. Agent eksikleri kontrol eder, erişimi varsa kurar, yoksa işletim sisteminize uygun adımları açıklar. macOS ve Windows için kurulum yolu vardır; Windows’ta native CapCut açıp kaydetme doğrulaması henüz tamamlanmamıştır.
+
+**Antigravity / Gemini kullanıcıları:** Antigravity için `--agent antigravity` seçin. [Antigravity skill desteği](https://antigravity.google/docs/skills) ile proje kurulumu `.agents/skills/capcut-editing`, `--scope user` kurulumu `~/.gemini/config/skills/capcut-editing` yoluna yapılır. Bu seçenek Antigravity IDE/2.0 içindir; Antigravity CLI'ın global yolu farklıdır. [Google AI Pro](https://support.google.com/googleone/answer/14534406) ve [Ultra](https://support.google.com/googleone/answer/16286513) üyelikleri Antigravity'de daha yüksek kullanım limitleri sağlar. Gemini sohbeti tek başına yerel CapCut dosyalarını düzenleyemez. Antigravity kurulum yolları test edilmiştir; Antigravity agentıyla gerçek bir CapCut düzenlemesi henüz uçtan uca doğrulanmamıştır.
 
 Bilgisayarda çalışabilen agentınıza yeni bir proje/klasör açıp şu mesajı gönderebilirsiniz:
 
@@ -29,7 +31,7 @@ Kullanıcı yalnızca linki gönderdiğinde veya nasıl kullanılacağını sord
 Kullanıcı kurulumu istediğinde:
 
 1. Public repoyu ayrı bir paket klasörüne indirin; kullanıcının mevcut çalışma dosyalarının üzerine yazmayın. GitHub girişi veya Git zorunlu değildir; ZIP indirme de kullanılabilir. `skills/capcut-editing/SKILL.md` dosyasını okuyun.
-2. Python **3.10+** kurulu mu kontrol edin; eksikse işletim sistemine uygun kurulum yolunu izleyin. Gerçekte kullandığınız agentı seçerek `python install.py --agent claude|cursor|codex --project <kullanıcının-proje-klasörü>` çalıştırın. `claude|cursor|codex` yerine tek doğru değeri yazın. Varsayılan kurulum yalnız bu projeye yapılır; başka bir agent için destek varmış gibi davranmayın.
+2. Python **3.10+** kurulu mu kontrol edin; eksikse işletim sistemine uygun kurulum yolunu izleyin. Gerçekte kullandığınız agentı seçerek `python install.py --agent claude|cursor|codex|antigravity --project <kullanıcının-proje-klasörü>` çalıştırın. `claude|cursor|codex|antigravity` yerine tek doğru değeri yazın. Varsayılan kurulum yalnız bu projeye yapılır; başka bir agent için destek varmış gibi davranmayın.
 3. FFmpeg’i kontrol edin; eksikse kullanıcının işletim sistemine uygun kurulum yolunu izleyin. Kurulan skillde `scripts/setup.py` çalıştırın. Bunun bildirdiği virtualenv Python’ı ile `scripts/capcut_tool.py doctor` çalıştırın. Dosya/ağ erişimi için çalıştığınız ortamın izinlerine uyun.
 4. Skillin keşfedildiğini, gerekli ses motorunu, FFmpeg’i ve kullanılabilir fontu doğrulayın. Skill listede görünmüyorsa kurulan proje klasöründe yeni oturum açılmasını açıklayın. Gerçek eksikleri belirtin; yalnız dosyaların kopyalanmasını “kullanıma hazır” diye sunmayın.
 5. Kullanıcıya kurulduğu klasörü, hazır olan işlemleri ve aşağıdaki üç komutu kısa biçimde anlatın. İlk konuşmasız kesim/altyazı isteğinde yerel modelin indirileceğini ve daha uzun sürebileceğini söyleyin. Kurulum sırasında CapCut projesini değiştirmeyin. Düzenleme istediğinde güncel projeyi okuyun; yazarken yalnız hedef projenin kaydedilip kapalı olması gerekir, CapCut açık kalabilir.
@@ -103,7 +105,7 @@ Kurulumu kendiniz yapmak isterseniz **Code → Download ZIP** ile indirip çıka
 
 ```sh
 python install.py --agent codex --project /path/to/your/project
-# agent değeri: codex, claude veya cursor; Windows’ta gerekirse py -3 kullanın
+# agent değeri: codex, claude, cursor veya antigravity; Windows’ta gerekirse py -3 kullanın
 ```
 
 Yalnız skilli bütün projelerde kullanmak istiyorsanız `--scope user` seçin. `--replace`, önceki kurulumu zaman damgalı bir yedekte korur. FFmpeg ayrı kurulur. Kurulumdan sonra kurulan skillin `scripts/setup.py` dosyasını çalıştırın; bildirdiği Python ile `scripts/capcut_tool.py doctor` çalıştırarak hazır olduğunu kontrol edin. Ayrıntılı düzenleme ve geri alma komutları [workflow.md](skills/capcut-editing/references/workflow.md) içindedir.
@@ -126,6 +128,6 @@ python -m unittest discover -s tests -v
 python skills/capcut-editing/scripts/capcut_tool.py doctor
 ```
 
-Tests cover real FFmpeg cuts, bundled VAD rejection of loud noise, weak-word protection, independent checks of suspicious ASR repetitions, three-millisecond clip-boundary regressions, preserved existing short clips, post-write validation/rollback, separate speech/caption modes, caption timing, stale-plan refusal, alternate layouts, and all three agent installers. Transcription adapters are tested without downloading Whisper weights. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
+Tests cover real FFmpeg cuts, bundled VAD rejection of loud noise, weak-word protection, independent checks of suspicious ASR repetitions, three-millisecond clip-boundary regressions, preserved existing short clips, post-write validation/rollback, separate speech/caption modes, caption timing, stale-plan refusal, alternate layouts, and all four agent installers. Transcription adapters are tested without downloading Whisper weights. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
 
 MIT licensed. See [LICENSE](LICENSE).

@@ -15,7 +15,7 @@ KULLANICI YALNIZCA BU LİNKİ GÖNDERDİĞİNDE
 
 Ne işe yaradığını ve aşağıdaki gereksinimleri kısa biçimde açıkla. Kullanıcıya nasıl başlanacağını anlat. İşletim sistemi ve kullanılacak yerel agent belli değilse gerekli bilgiyi öğren. Yalnız link paylaşılması, kurulumu veya bir CapCut projesini değiştirmeyi otomatik olarak yetkilendirmez.
 
-Yerel dosya ve komut erişimin yoksa kurulum yaptığını iddia etme. Sohbet üzerinden kurulumda yol gösterebilirsin. Düzenlemeyi gerçekleştirmek için kullanıcıyı bilgisayarında çalışan Codex, Claude Code veya Cursor gibi bir agenta yönlendir; yeni bir proje klasörü açmasını ve aşağıdaki kurulum mesajını orada göndermesini anlat. Desteklenen kurulum seçenekleri codex, claude ve cursor'dır. Başka bir agent için destek varmış gibi davranma.
+Yerel dosya ve komut erişimin yoksa kurulum yaptığını iddia etme. Sohbet üzerinden kurulumda yol gösterebilirsin. Düzenlemeyi gerçekleştirmek için kullanıcıyı bilgisayarında çalışan Codex, Claude Code, Cursor veya Antigravity gibi bir agenta yönlendir; yeni bir proje klasörü açmasını ve aşağıdaki kurulum mesajını orada göndermesini anlat. Desteklenen kurulum seçenekleri codex, claude, cursor ve antigravity'dir. Başka bir agent için destek varmış gibi davranma.
 
 GEREKSİNİMLER
 
@@ -29,6 +29,15 @@ GitHub hesabı ve kod bilgisi gerekmez. Public paket ZIP olarak da indirilebilir
 
 Apple Silicon macOS'ta MLX Whisper, Windows ve Intel macOS'ta faster-whisper kullanılır. CPU desteği vardır; NVIDIA/CUDA isteğe bağlıdır. Windows için kurulum ve yol/transkripsiyon uyarlaması vardır; Windows CapCut'ta açıp yeniden kaydetme doğrulaması henüz tamamlanmamıştır.
 
+ANTIGRAVITY / GEMINI KULLANICILARI
+
+Antigravity IDE/2.0, SKILL.md ve paket içindeki scriptleri destekler. Kurulumda --agent antigravity seç. Proje kurulumu .agents/skills/capcut-editing, --scope user kurulumu ~/.gemini/config/skills/capcut-editing yoluna yapılır. Antigravity CLI'ın global yolu farklıdır; bu installer seçeneği IDE/2.0 içindir. Google AI Pro ve Ultra üyelikleri Antigravity'de daha yüksek kullanım limitleri sağlar. Gemini sohbeti tek başına yerel CapCut dosyalarını düzenleyemez; bilgisayardaki Antigravity kullanılmalıdır. Kurulum yolları test edilmiştir; Antigravity agentıyla gerçek CapCut düzenlemesi henüz uçtan uca doğrulanmamıştır.
+
+Resmi kaynaklar:
+https://antigravity.google/docs/skills
+https://support.google.com/googleone/answer/14534406
+https://support.google.com/googleone/answer/16286513
+
 YEREL AGENTA GÖNDERİLECEK MESAJ
 
 CapCut Editing Skill'i https://github.com/emirrcodes/capcut-editing-skill reposundan bu projeye kur. Eksik gereksinimleri kontrol et ve gerçekten kullanıma hazır mı doğrula. Kurulum sırasında CapCut projelerimi düzenleme. Sonra proje adını ve yapmak istediğim işlemi vereceğim.
@@ -41,7 +50,7 @@ KURULUM — YEREL DOSYA VE KOMUT ERİŞİMİ OLAN AGENT İÇİN
 
    python install.py --agent codex --project /kullanicinin/proje/klasoru
 
-   Bu örnekte codex yerine gerçek araç Claude Code ise claude, Cursor ise cursor kullan. Örnek klasör yolunu gerçek kullanıcı proje yoluyla değiştir. Boşluk içeren yolları tırnakla. Windows'ta gerekirse Python çağrısını py -3 ile yap. Installer'ın bildirdiği kurulu skill yolunu sonraki adımlarda kullan. Varsayılan kurulum yalnız bu projeye yapılır. Bütün projelere kurmak için --scope user seçeneği vardır; kullanıcı kapsam tercihini gözet. Var olan kurulumu güncellemek için --replace önceki skill kopyasını zaman damgalı yedekte tutar.
+   Bu örnekte codex yerine gerçek araç Claude Code ise claude, Cursor ise cursor, Antigravity ise antigravity kullan. Örnek klasör yolunu gerçek kullanıcı proje yoluyla değiştir. Boşluk içeren yolları tırnakla. Windows'ta gerekirse Python çağrısını py -3 ile yap. Installer'ın bildirdiği kurulu skill yolunu sonraki adımlarda kullan. Varsayılan kurulum yalnız bu projeye yapılır. Bütün projelere kurmak için --scope user seçeneği vardır; kullanıcı kapsam tercihini gözet. Var olan kurulumu güncellemek için --replace önceki skill kopyasını zaman damgalı yedekte tutar.
 
 3. Kurulan skillde scripts/setup.py dosyasını Python ile çalıştır. Setup gerekli konuşma algılama/transkripsiyon paketlerini izole bir virtualenv içine kurar ve kullanılacak Python yolunu bildirir. Setup'ın bildirdiği virtualenv Python'ı ile kurulan scripts/capcut_tool.py doctor komutunu çalıştır. FFmpeg ayrı kurulur; işletim sistemine uygun kurulum yoluyla eksikse tamamla. Dosya/ağ izinleri çalıştığın ortam tarafından sınırlanıyorsa bunu açıkça belirt.
 

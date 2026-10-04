@@ -260,6 +260,25 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual((Path(update["previous_skill_backup"]) / "user-note.txt").read_text(), "preserve my modification")
             self.assertFalse((installed / "user-note.txt").exists())
 
+    def test_antigravity_project_and_user_scope_are_isolated(self):
+        base = (self.root / "antigravity-scope").resolve()
+        project = installer.install("antigravity", base)
+        user = installer.install("antigravity", base, scope="user")
+        project_path = base / ".agents/skills/capcut-editing"
+        user_path = base / ".gemini/config/skills/capcut-editing"
+        self.assertEqual(Path(project["skill"]), project_path)
+        self.assertEqual(Path(user["skill"]), user_path)
+        self.assertEqual((project_path / "SKILL.md").read_bytes(), (user_path / "SKILL.md").read_bytes())
+        (user_path / "user-note.txt").write_text("keep global modification")
+        with self.assertRaises(RuntimeError):
+            installer.install("antigravity", base, scope="user")
+        updated = installer.install("antigravity", base, replace=True, scope="user")
+        backup = Path(updated["previous_skill_backup"])
+        self.assertEqual(backup.parent, user_path.parent)
+        self.assertEqual((backup / "user-note.txt").read_text(), "keep global modification")
+        self.assertTrue((project_path / "SKILL.md").is_file())
+        self.assertFalse((project_path / "user-note.txt").exists())
+
     def test_windows_discovery_font_and_process_check(self):
         local = self.root / "LocalAppData"
         windows = self.root / "Windows"
