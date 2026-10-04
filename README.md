@@ -52,6 +52,21 @@ Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum
 “Kısa doğal duraklamaları koru, uzun sessizlikleri kes”
 ```
 
+## CapCut otomatik altyazısına göre avantajı
+
+CapCut’ın otomatik altyazı aracı konuşmayı metne dönüştürür; oluşan metni ve görünümü uygulamada düzenleyebilirsiniz. Gürültü, aksan veya hızlı konuşma nedeniyle yanlış tanınan kelimeler için metni gözden geçirip düzeltmek gerekir. [CapCut’ın açıklaması](https://www.capcut.com/help/auto-captions-in-capcut).
+
+Bu skillde transkripsiyondan sonra **kullandığınız AI agentın modeli altyazıyı bağlamıyla birlikte gözden geçirir**. Yanlış tanınan kelimeleri, anlam kaymalarını ve bozulmuş ifadeleri kontrol eder; açık hataları konuşmanın bağlamına göre düzeltir, belirsiz bölümleri güncel ses üzerinden ayrıca inceler. Altyazıları anlama göre kısa ifadelere böler ve klip kesimleriyle zamanlamasını kontrol eder. Böylece transkripsiyona ek olarak bağlam ve anlam incelemesi de iş akışına dahil olur. Amaç konuşulanı doğru aktarmaktır; agent yeni içerik uydurmamalı veya konuşmayı yeniden yazmamalıdır.
+
+**Altyazıyı kendi komutlarınızla şekillendirebilirsiniz.** Kelime sayısını, anlamlı bölünme kurallarını, dili, harf kullanımını, noktalamayı ve görünümü agentınıza söyleyin. Varsayılan 4–6 kelimelik bloklar, küçük harf ve klip sınırı kuralları bu tercihlerin başlangıç noktasıdır. Örneğin:
+
+```text
+“proje adı altyazı ekle; transkripsiyon hatalarını bağlama göre kontrol et, konuşulanı değiştirme”
+“Blok başına en fazla 4 kelime kullan; cümleyi anlamlı yerlerden böl, fiili tek başına bırakma”
+“Altyazıları küçük harf yap ve sondaki noktalama işaretlerini kaldır”
+“Altyazıları biraz büyüt; beyaz yazı ve siyah kontur kullan”
+```
+
 ## Platforms and installation
 
 - **Apple Silicon macOS:** MLX Whisper, or faster-whisper on CPU.
