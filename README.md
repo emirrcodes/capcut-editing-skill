@@ -1,14 +1,36 @@
 # CapCut Editing Skill
 
-Cut silence, cut non-speech with speech detection, and add editable, phrase-based subtitles to a local CapCut Desktop project using your AI agent. Supports video with embedded audio and audio-only projects. No mandatory manual editing step or computer-control tools.
+CapCut Desktop projelerindeki sessiz veya konuşmasız kısımları kesmek ve anlama göre bölünmüş, düzenlenebilir altyazılar eklemek için yapay zekânızla kullanabileceğiniz bir skill. Video ve yalnız ses içeren projelerle çalışır. Ne yapmak istediğinizi normal bir mesajla söylersiniz; sonuç CapCut içinde düzenlenebilir kalır.
 
-## Give this link to your agent
+## Bu linki yapay zekânıza gönderin
 
-Open a new local project in **Claude Code, Cursor, or Codex**, then send:
+Başlamak için bu repo’nun linkini kullandığınız herhangi bir yapay zekâya gönderip **“Bunu kullanmak istiyorum; neye ihtiyacım var ve nasıl kurarım?”** demeniz yeterli. Yapay zekâ bu README’den ne işe yaradığını, gereksinimleri ve kurulum adımlarını öğrenip size açıklayabilir. GitHub hesabınızın veya kod yazma bilginizin olması gerekmez.
 
-> Install CapCut Editing Skill in this project from https://github.com/emirrcodes/capcut-editing-skill and check that it is ready to use.
+İhtiyacınız olanlar:
 
-**For the installing agent:** download this public repository into a separate package folder; do not overwrite the user's working files. Read skills/capcut-editing/SKILL.md. Run `python install.py --agent claude|cursor|codex --project <user-project-folder>` with the correct agent value. Installation defaults to this project only. Run the installed scripts/setup.py, use its reported virtualenv Python, then run scripts/capcut_tool.py doctor. Check/install FFmpeg through the user's platform package manager if missing. Confirm the discovered skill, speech engine, FFmpeg, and usable font. Respect the host's filesystem/network permissions; report actual missing prerequisites rather than claiming installation succeeded. No GitHub login is needed to download this public package. Bare links do not universally install skills; use the request above.
+- Bir bilgisayar ve üzerinde kurulu **CapCut Desktop**.
+- Kullanacağınız yapay zekâ hizmetinde bir **hesap/üyelik**.
+- İlk kurulum ve konuşma modelinin indirilmesi için internet bağlantısı ve yeterli boş disk alanı.
+
+**Düzenlemeyi yapabilmek için yapay zekânın bilgisayarınızdaki dosyalara ve komut çalıştırmaya erişmesi gerekir.** Codex, Claude Code veya Cursor gibi yerel agentlarla çalışabilirsiniz. Yalnızca sohbet edebilen bir yapay zekâ da kurulumu açıklayabilir; yerel erişimi yoksa uygulayabileceğiniz adımları anlatmalı veya bu agentlardan birinde devam etmenize yardımcı olmalıdır. Linki göndermek tek başına otomatik kurulum yapmaz. Ekran, klavye veya fare kontrolü vermeniz gerekmez.
+
+Python ve FFmpeg gibi yardımcı yazılımlar da gerekir; bunları önceden bilmeniz gerekmez. Agent eksikleri kontrol eder, erişimi varsa kurar, yoksa işletim sisteminize uygun adımları açıklar. macOS ve Windows için kurulum yolu vardır; Windows’ta native CapCut açıp kaydetme doğrulaması henüz tamamlanmamıştır.
+
+Bilgisayarda çalışabilen agentınıza yeni bir proje/klasör açıp şu mesajı gönderebilirsiniz:
+
+> https://github.com/emirrcodes/capcut-editing-skill — Bu skilli bu projeye kur, eksik gereksinimleri kontrol et ve kullanıma hazır olup olmadığını söyle. Sonra CapCut projemin adını ve yapmak istediğim işlemi vereceğim.
+
+## Bu README’yi okuyan yapay zekâ için
+
+Kullanıcı yalnızca linki gönderdiğinde veya nasıl kullanılacağını sorduğunda önce amacı ve yukarıdaki gereksinimleri kullanıcının dilinde, teknik bilgi beklemeden açıklayın. İşletim sistemi veya kullanılan agent belli değilse gerekli bilgiyi öğrenin. Yerel dosya/terminal erişiminiz yoksa kurduğunuzu söylemeyin; kullanıcıya uygun yerel agentta devam etme veya manuel kurulum yolunu anlatın. Eksik gereksinimler için yalnız mevcut adımı çözmesini sağlayan talimatı verin.
+
+Kullanıcı kurulumu istediğinde:
+
+1. Public repoyu ayrı bir paket klasörüne indirin; kullanıcının mevcut çalışma dosyalarının üzerine yazmayın. GitHub girişi veya Git zorunlu değildir; ZIP indirme de kullanılabilir. `skills/capcut-editing/SKILL.md` dosyasını okuyun.
+2. Python **3.10+** kurulu mu kontrol edin; eksikse işletim sistemine uygun kurulum yolunu izleyin. Gerçekte kullandığınız agentı seçerek `python install.py --agent claude|cursor|codex --project <kullanıcının-proje-klasörü>` çalıştırın. `claude|cursor|codex` yerine tek doğru değeri yazın. Varsayılan kurulum yalnız bu projeye yapılır; başka bir agent için destek varmış gibi davranmayın.
+3. FFmpeg’i kontrol edin; eksikse kullanıcının işletim sistemine uygun kurulum yolunu izleyin. Kurulan skillde `scripts/setup.py` çalıştırın. Bunun bildirdiği virtualenv Python’ı ile `scripts/capcut_tool.py doctor` çalıştırın. Dosya/ağ erişimi için çalıştığınız ortamın izinlerine uyun.
+4. Skillin keşfedildiğini, gerekli ses motorunu, FFmpeg’i ve kullanılabilir fontu doğrulayın. Skill listede görünmüyorsa kurulan proje klasöründe yeni oturum açılmasını açıklayın. Gerçek eksikleri belirtin; yalnız dosyaların kopyalanmasını “kullanıma hazır” diye sunmayın.
+5. Kullanıcıya kurulduğu klasörü, hazır olan işlemleri ve aşağıdaki üç komutu kısa biçimde anlatın. İlk konuşmasız kesim/altyazı isteğinde yerel modelin indirileceğini ve daha uzun sürebileceğini söyleyin. Kurulum sırasında CapCut projesini değiştirmeyin. Düzenleme istediğinde güncel projeyi okuyun; yazarken yalnız hedef projenin kaydedilip kapalı olması gerekir, CapCut açık kalabilir.
 
 ## Kullanım
 
@@ -67,22 +89,22 @@ Bu skillde transkripsiyondan sonra **kullandığınız AI agentın modeli altyaz
 “Altyazıları biraz büyüt; beyaz yazı ve siyah kontur kullan”
 ```
 
-## Platforms and installation
+## Platformlar ve manuel kurulum
 
-- **Apple Silicon macOS:** MLX Whisper, or faster-whisper on CPU.
-- **Windows / Intel macOS:** faster-whisper; CPU is the default, NVIDIA/CUDA optional. Windows path handling, installation and transcription adaptation are included; **Windows CapCut round-trip verification is pending**.
-- Python **3.10+**, FFmpeg, an installed font, and a local agent with file/terminal access are required. A browser-only chatbot without local access cannot edit your local CapCut files.
+- **Apple Silicon macOS:** MLX Whisper veya CPU üzerinde faster-whisper.
+- **Windows / Intel macOS:** faster-whisper; varsayılan CPU, NVIDIA/CUDA isteğe bağlıdır. Windows yol, kurulum ve transkripsiyon desteği vardır; **Windows CapCut’ta açıp yeniden kaydetme doğrulaması henüz tamamlanmamıştır**.
+- Python **3.10+**, FFmpeg, kullanılabilir bir font ve yerel dosya/komut erişimi gerekir. Agent bunları kontrol eder; CapCut ile gelen font kullanılabilir.
 
 Setup installs CPU Silero VAD through [faster-whisper](https://github.com/SYSTRAN/faster-whisper), plus MLX Whisper when selected, in an isolated virtualenv. The small VAD model comes with that dependency. Default speech cutting uses Whisper for word/pause review even without captions; its model downloads on first speech-cut or caption use. Amplitude-only silence cutting needs no transcription model. Detection and transcription run locally; model files are not included in this repository. Once a local agent reads the generated transcript, that text is subject to the agent provider's ordinary data handling.
 
-Optional manual download: use **Code → Download ZIP**, extract, then:
+Kurulumu kendiniz yapmak isterseniz **Code → Download ZIP** ile indirip çıkarın, sonra:
 
 ```sh
 python install.py --agent codex --project /path/to/your/project
-# agent values: codex, claude, cursor; on Windows use py -3 if appropriate
+# agent değeri: codex, claude veya cursor; Windows’ta gerekirse py -3 kullanın
 ```
 
-Use `--scope user` only if you want the skill available across projects. `--replace` preserves the previous installed skill in a timestamped sibling backup. FFmpeg is installed separately. Detailed editing commands and restore instructions are in [workflow.md](skills/capcut-editing/references/workflow.md).
+Yalnız skilli bütün projelerde kullanmak istiyorsanız `--scope user` seçin. `--replace`, önceki kurulumu zaman damgalı bir yedekte korur. FFmpeg ayrı kurulur. Kurulumdan sonra kurulan skillin `scripts/setup.py` dosyasını çalıştırın; bildirdiği Python ile `scripts/capcut_tool.py doctor` çalıştırarak hazır olduğunu kontrol edin. Ayrıntılı düzenleme ve geri alma komutları [workflow.md](skills/capcut-editing/references/workflow.md) içindedir.
 
 ## Supported drafts and backups
 
