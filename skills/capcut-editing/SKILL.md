@@ -5,7 +5,7 @@ description: "Edit local CapCut Desktop projects by name or folder: cut silence 
 
 # CapCut Editing
 
-Use the packaged scripts relative to this SKILL.md. Silence and non-speech are separate operations: FFmpeg -30 dB / 0.25 s for silence; local Silero VAD with a sensitive second pass over candidate gaps for non-speech. Default captions are Turkish lowercase, usually 4–6 words, maximum 6, white with black stroke. User requests override configurable presentation and detection defaults.
+Use the packaged scripts relative to this SKILL.md. Silence and non-speech are separate operations. Both cutting commands default to tight pacing. Silence uses FFmpeg -30 dB / 0.08 s; non-speech uses local Silero VAD, 80 ms remaining gaps and 30 ms speech padding, with word review, whole-timeline pause review and cut verification enabled. Default captions are Turkish lowercase, usually 4–6 words, maximum 6, white with black stroke. User requests override configurable presentation and detection defaults.
 
 ## Setup and scope
 
@@ -17,8 +17,8 @@ No computer/screen control is needed. Before apply/restore, the target project m
 
 ## Execute the requested mode
 
-- “sessiz kısımları kes”: prepare --mode silence, preview, apply. Detect low audio level with FFmpeg; do not add subtitles unless requested.
-- “konuşmasız kısımları kes” / “konuşma olmayan kısımları kes”: prepare --mode speech, inspect speech-analysis.json and preview, apply. Scan for actual speech with VAD and review candidate gaps. For high background noise, weak words, or an explicitly tighter pace, enable speech_word_review to cross-check VAD with current word timestamps; see [workflow.md](references/workflow.md). If the user asks to remove short pauses or says the pass left unnecessary gaps, use the tight starting profile in references/speech-tight.config.json (80 ms remaining gaps, 30 ms speech padding, 80 ms speech bursts, word review, whole-timeline pause review and candidate verification); revise from the current recording. This does not authorize removing repetitions or false starts. Never route this request to amplitude-only cutting or silently fall back when dependencies are missing.
+- “sessiz kısımları kes”: prepare --mode silence, preview, apply. The default amplitude-only cut detects -30 dBFS silence lasting at least 80 ms; it needs no transcription. Do not add subtitles unless requested.
+- “konuşmasız kısımları kes” / “konuşma olmayan kısımları kes”: prepare --mode speech, inspect speech-analysis.json, speech-pause-audit.json, speech-cut-verification.json and preview, apply. The default tight settings match references/speech-tight.config.json; no extra tight-pace request or config is needed. Scan actual speech, cross-check current words and review pauses across the whole timeline. This mode requires local transcription even without subtitles. Preserve speech, repetitions and false starts; review uncertain ranges from the current audio. Never route this request to amplitude-only cutting or silently fall back when dependencies are missing.
 - “altyazı ekle”: prepare --mode subtitles against the current disk timeline, create semantic ranges, preview, apply. Do not change the media cuts.
 - Combined requests: silence + subtitles uses --mode both; non-speech + subtitles uses --mode speech-subtitles. Create semantic ranges from the newly cut timeline, preview, and apply in the same request.
 
@@ -36,9 +36,9 @@ The resulting codex_subtitles track contains native CapCut type: subtitle materi
 
 ## Finish and customization
 
-Report old/new/removed duration for cutting, caption count for subtitles, and the exact backup_suffix. Successful apply cleans temporary audio and transcripts. On failure, clean the managed work directory after diagnostics unless it is needed for an immediate retry. Mention that reopening CapCut reloads the disk changes. The result stays editable in CapCut; export is outside this skill.
+Report old/new/removed duration and effective cut_settings for cutting, caption count for subtitles, and the exact backup_suffix. Successful apply cleans temporary audio and transcripts. On failure, clean the managed work directory after diagnostics unless it is needed for an immediate retry. Mention that reopening CapCut reloads the disk changes. The result stays editable in CapCut; export is outside this skill.
 
-For explicit preferences, use an external JSON configuration based on [references/config.example.json](references/config.example.json). Prepare again after changing settings. See [references/workflow.md](references/workflow.md) for restore and separate silence/speech controls.
+For a request to preserve natural pauses, use [references/natural-pauses.config.json](references/natural-pauses.config.json): 250 ms amplitude silence, 300 ms speech gaps and 120 ms speech padding, retaining word/pause/source checks. Otherwise keep the tight defaults. For other explicit preferences, use an external JSON configuration based on [references/config.example.json](references/config.example.json). Prepare again after changing settings. See [references/workflow.md](references/workflow.md) for restore and separate silence/speech controls.
 
 If the user explicitly identifies a current timeline interval as containing no speech, record it in speech_reviewed_gaps with the current root draft SHA-256, integer ranges_us, and basis user-confirmed. Such reviewed intervals may override a detector label on that exact draft version; never invent user confirmation from ASR/VAD results. Keep the per-piece 100 ms guard and source verification, and report the reviewed override separately. If the draft changed, ask/reinspect the interval rather than reusing old times.
 

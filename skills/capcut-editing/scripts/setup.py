@@ -28,7 +28,7 @@ def main() -> None:
         if backend == "mlx":
             requirements.append("mlx-whisper>=0.4,<1")
         subprocess.run([str(python), "-m", "pip", "install", *requirements], check=True)
-    report = {"backend": backend, "python": str(python), "virtualenv_exists": python.is_file(), "speech_detector": "CPU Silero VAD bundled with faster-whisper", "note": "FFmpeg must be installed separately. The transcription model downloads on first use, then inference runs locally. Speech-only VAD needs no Whisper transcription weights."}
+    report = {"backend": backend, "python": str(python), "virtualenv_exists": python.is_file(), "speech_detector": "CPU Silero VAD bundled with faster-whisper", "note": "FFmpeg must be installed separately. The transcription model downloads on first speech-cut or caption use, then inference runs locally. Default speech cutting includes word and pause review. Explicit VAD-only configurations need no Whisper transcription weights."}
     print(json.dumps(report, indent=2))
 
 

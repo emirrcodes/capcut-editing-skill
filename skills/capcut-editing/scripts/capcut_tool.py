@@ -30,17 +30,17 @@ HERE = Path(__file__).resolve().parent
 DEFAULTS = {
     "draft_root": None, "ffmpeg": "ffmpeg", "language": "tr",
     "backend": "auto", "model": None, "device": "cpu",
-    "noise_db": -30.0, "min_silence": 0.25, "merge_gap": 0.12,
+    "noise_db": -30.0, "min_silence": 0.08, "merge_gap": 0.12,
     "min_keep": 0.10, "max_words": 6, "lowercase": True,
     "keep_terminal_punctuation": False, "font_path": None,
     "font_size": 10.0, "color": [1.0, 1.0, 1.0],
     "stroke_color": [0.0, 0.0, 0.0], "stroke_width": 0.06,
     "caption_y": 0.58,
     "speech_threshold": 0.5, "speech_review_threshold": 0.35,
-    "speech_min_duration": 0.10, "speech_min_gap": 0.30,
-    "speech_padding": 0.12, "speech_review_context": 0.40,
+    "speech_min_duration": 0.08, "speech_min_gap": 0.08,
+    "speech_padding": 0.03, "speech_review_context": 0.40,
     "speech_review_window": 30.0, "speech_review_max_gain": 4.0,
-    "speech_word_review": False, "speech_verify_cut": False, "speech_pause_review": False, "speech_reviewed_gaps": None,
+    "speech_word_review": True, "speech_verify_cut": True, "speech_pause_review": True, "speech_reviewed_gaps": None,
 }
 MODES = ("silence", "speech", "subtitles", "both", "speech-subtitles")
 CUT_MODES = {"silence", "speech", "both", "speech-subtitles"}
@@ -714,6 +714,11 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
         prepared, report = cut_silence(draft, project, config)
     elif mode in {"speech", "speech-subtitles"}:
         prepared, report = cut_speech(draft, project, work, config)
+    if mode in CUT_MODES:
+        keys = ("noise_db", "min_silence", "merge_gap", "min_keep") if mode in {"silence", "both"} else (
+            "speech_threshold", "speech_review_threshold", "speech_min_duration", "speech_min_gap", "speech_padding",
+            "speech_word_review", "speech_pause_review", "speech_verify_cut")
+        report["cut_settings"] = {key: config[key] for key in keys}
     if mode in CAPTION_MODES:
         font_path(config)
         audio = work / "timeline.wav"

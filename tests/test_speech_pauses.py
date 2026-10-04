@@ -64,7 +64,7 @@ class PauseReviewTests(unittest.TestCase):
         self.assertEqual([x["word"] for x in words],["bana"])
         self.assertEqual(suspects,[(1000000,1500000)])
     def test_context_review_requires_candidate_source_verification(self):
-        config=tool.settings();config["speech_pause_review"]=True
+        config=tool.settings();config["speech_verify_cut"]=False
         with self.assertRaisesRegex(RuntimeError,"requires"):
             tool.validate_settings(config)
     def test_eighty_ms_pause_threshold_is_separate_from_clip_guard(self):

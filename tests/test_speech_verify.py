@@ -71,23 +71,25 @@ class CutVerificationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'forward 1.0x'):
             tool.check_editable(value,'speech')
     def test_verification_requires_current_word_review(self):
-        self.config['speech_verify_cut']=True
+        self.config.update(speech_verify_cut=True, speech_word_review=False, speech_pause_review=False)
         with self.assertRaisesRegex(RuntimeError,'requires speech_word_review'):
             tool.validate_settings(self.config)
 
 @unittest.skipUnless(speech_scan.available(),'Run setup.py')
 class TightPauseTests(unittest.TestCase):
-    def test_tight_profile_removes_90ms_gap_while_default_preserves_it(self):
+    def test_default_and_tight_remove_90ms_gap_while_explicit_natural_preserves_it(self):
         import numpy as np
         path=Path(__file__).resolve().parents[1]/'skills/capcut-editing/references/speech-tight.config.json'
-        tight=tool.settings(path); default=tool.settings()
+        tight=tool.settings(path); default=tool.settings(); natural=tool.settings(tool.HERE.parent/"references/natural-pauses.config.json")
         samples=np.zeros(2*speech_scan.RATE,dtype=np.float32)
         def detector(samples,threshold,config):
             return [(0,12800),(15200,28800)] if threshold==.5 else []
         with patch.object(speech_scan,'detect',side_effect=detector):
             strict=speech_scan.analyze_samples(samples,tight)
-            natural=speech_scan.analyze_samples(samples,default)
+            standard=speech_scan.analyze_samples(samples,default)
+            relaxed=speech_scan.analyze_samples(samples,natural)
         self.assertIn([830_000,920_000],strict['removed_ranges_us'])
-        self.assertEqual(natural['removed_ranges_us'],[])
+        self.assertEqual(standard['removed_ranges_us'],strict['removed_ranges_us'])
+        self.assertEqual(relaxed['removed_ranges_us'],[])
         self.assertEqual(tight['speech_min_gap'],.08)
         self.assertEqual(tight['speech_padding'],.03)

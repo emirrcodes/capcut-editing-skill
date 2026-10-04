@@ -8,7 +8,10 @@ from draft_primitives import apply_timeline_keep_ranges
 from speech_verify import compare
 
 class ReviewedGapTests(unittest.TestCase):
-    setUp=fixtures.WorkflowTests.setUp
+    def setUp(self):
+        fixtures.WorkflowTests.setUp(self)
+        # Isolate hash-bound human overrides; source verification is tested separately.
+        self.config.update(speech_word_review=False,speech_pause_review=False,speech_verify_cut=False)
     tearDown=fixtures.WorkflowTests.tearDown
     def setup_gap(self,ranges):
         folder=project(self.root,draft(self.media,(2_000_000,)))

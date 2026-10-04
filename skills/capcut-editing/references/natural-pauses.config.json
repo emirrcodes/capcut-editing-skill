@@ -1,0 +1,6 @@
+{
+  "min_silence": 0.25,
+  "speech_min_duration": 0.1,
+  "speech_min_gap": 0.3,
+  "speech_padding": 0.12
+}

@@ -10,7 +10,10 @@ import speech_scan
 
 
 class SpeechWorkflowTests(unittest.TestCase):
-    setUp = fixtures.WorkflowTests.setUp
+    def setUp(self):
+        fixtures.WorkflowTests.setUp(self)
+        # These existing tests explicitly exercise the lightweight VAD-only path.
+        self.config.update(speech_word_review=False, speech_pause_review=False, speech_verify_cut=False)
     tearDown = fixtures.WorkflowTests.tearDown
     spec = fixtures.WorkflowTests.spec
 
@@ -85,7 +88,8 @@ class SpeechDetectorTests(unittest.TestCase):
     def setUp(self):
         import numpy as np
         self.np = np
-        self.config = tool.settings()
+        self.config = tool.settings(tool.HERE.parent / "references/natural-pauses.config.json")
+        self.config.update(speech_word_review=False, speech_pause_review=False, speech_verify_cut=False)
 
     def test_sensitive_gap_review_preserves_weak_speech_and_word_padding(self):
         rate = speech_scan.RATE

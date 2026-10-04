@@ -121,7 +121,8 @@ class WordReviewTests(unittest.TestCase):
     @unittest.skipUnless(tool.shutil.which("ffmpeg"), "FFmpeg not installed")
     def test_word_review_in_cut_mode_does_not_add_captions_and_cleans_transcripts(self):
         folder = project(self.root, draft(self.media, (2_000_000,)))
-        self.config["speech_word_review"] = True
+        self.config.update(speech_word_review=True, speech_pause_review=False, speech_verify_cut=False)
+        # Isolate word review from the independently tested full default pipeline.
         work = self.root / "cut-only"
         words = {"segments": [segment(0, .5, [("real", 0, .5)]), segment(1, 1.3, [("weak", 1, 1.3)])]}
         with patch("speech_scan.analyze", return_value=self.analysis()), patch.object(speech_words, "transcribe", return_value=words):
