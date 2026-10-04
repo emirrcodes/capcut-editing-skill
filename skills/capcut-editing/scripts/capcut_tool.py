@@ -519,7 +519,9 @@ def subtitle_blocks(transcript: dict, spec: dict, config: dict, duration: int) -
     return blocks
 
 
-def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict) -> dict:
+def insert_subtitles(draft: dict, transcript: dict, spec: dict, config: dict, *, reviewed_audio_ranges=()) -> dict:
+    from caption_review import require_review
+    require_review(transcript_words(transcript,draft["duration"]),draft,reviewed_audio_ranges)
     blocks=subtitle_blocks(transcript,spec,config,draft["duration"])
     result = copy.deepcopy(draft)
     remove_previous_codex_subtitles(result)
@@ -570,8 +572,11 @@ def validate_subtitles(draft: dict, config: dict, source_blocks=None) -> dict:
     if len(tracks) != 1 or not tracks[0].get("segments"):
         raise RuntimeError("Expected exactly one populated codex_subtitles track")
     materials = {m["id"]: m for m in draft["materials"]["texts"]}
+    from subtitle_boundaries import frame_uncertainty
+    timing_tolerance_ms=0 if source_blocks is not None else frame_uncertainty(draft)/1000
+    timing_uncertainties=[]
     cursor = 0
-    for segment in tracks[0]["segments"]:
+    for block_index,segment in enumerate(tracks[0]["segments"],1):
         target = segment["target_timerange"]
         if target["start"] != cursor or target["duration"] <= 0:
             raise RuntimeError("Subtitle gap/overlap")
@@ -589,13 +594,17 @@ def validate_subtitles(draft: dict, config: dict, source_blocks=None) -> dict:
             payload = item[field]
             if not len(payload["start_time"]) == len(payload["end_time"]) == len(payload["text"]):
                 raise RuntimeError("Invalid subtitle word timing arrays")
-            if any(not 0 <= left <= right <= target["duration"] // 1000 for left, right in zip(payload["start_time"], payload["end_time"])):
-                raise RuntimeError("Subtitle word timing lies outside its block")
+            limit=target["duration"]//1000
+            for word_index,(left,right) in enumerate(zip(payload["start_time"],payload["end_time"])):
+                if not 0<=left<=right<=limit+timing_tolerance_ms:
+                    raise RuntimeError("Subtitle word timing lies outside its block")
+                if right>limit:
+                    timing_uncertainties.append({"block":block_index,"word_index":word_index,"field":field,"overflow_ms":right-limit})
     if cursor != draft["duration"]:
         raise RuntimeError("Subtitles do not cover 0 through project duration")
     from subtitle_boundaries import validate_boundaries
     boundary_report=validate_boundaries(draft,source_blocks)
-    return {"subtitle_blocks": len(tracks[0]["segments"]), "duration_us": cursor, **boundary_report}
+    return {"subtitle_blocks": len(tracks[0]["segments"]), "duration_us": cursor, "word_timing_uncertainties":timing_uncertainties, **boundary_report}
 
 
 def caption_preview(draft: dict) -> dict:
@@ -735,6 +744,13 @@ def prepare(project: Path, mode: str, work: Path, config: dict, do_transcribe: b
     plan = {"schema": 1, "project": str(project), "mode": mode, "snapshot": before, "prepared_sha256": hashlib.sha256(encoded(prepared)).hexdigest(), "settings": config, "report": report}
     if (work / "transcript.json").is_file():
         plan["transcript_sha256"] = hashlib.sha256((work / "transcript.json").read_bytes()).hexdigest()
+    if mode in CAPTION_MODES and (work/"transcript.json").is_file():
+        from caption_review import audit
+        receipt=audit(work,prepared,read_json(work/"transcript.json"),config,plan["transcript_sha256"])
+        if receipt:
+            plan["caption_audio_review"]=receipt
+            report["caption_audio_review"]=receipt
+    assert_snapshot(project,before)
     write_json(work / "plan.json", plan)
     return {**report, "operation": "prepared-without-project-writes", "mode": mode, "work_dir": str(work), "next": "Create semantic subtitles.json ranges from words.json, then apply" if mode in CAPTION_MODES else "Review speech-analysis.json and preview/apply" if mode == "speech" else "apply"}
 
@@ -761,7 +777,10 @@ def build_result(work: Path, spec_path: Path | None) -> tuple[dict, dict, Path]:
         spec = read_json(spec_path)
         if hashlib.sha256(transcript_path.read_bytes()).hexdigest() != plan.get("transcript_sha256") or spec.get("transcript_sha256") != plan.get("transcript_sha256"):
             raise RuntimeError("Transcript/spec belongs to another preparation. Build new semantic blocks from the current words.json")
-        draft = insert_subtitles(draft, read_json(transcript_path), spec, config)
+        verified=plan.get("caption_verified_ranges_us",[])
+        if verified and plan.get("caption_verified_transcript_sha256")!=plan["transcript_sha256"]:
+            raise RuntimeError("Caption audio resolution is stale")
+        draft = insert_subtitles(draft, read_json(transcript_path), spec, config,reviewed_audio_ranges=verified)
     validate(draft)
     if plan["mode"] in CUT_MODES:
         validate_cut_fragments(draft, read_json(draft_paths(project)[0]))
@@ -776,7 +795,7 @@ def review_transcript(work: Path, review_path: Path) -> dict:
     if plan["mode"] not in CAPTION_MODES:
         raise RuntimeError("Transcript review requires a caption preparation")
     payload=read_json(review_path)
-    if set(payload)!={"transcript_sha256","audio_ranges_us","transcript","note"} or not isinstance(payload["note"],str) or not payload["note"].strip():
+    if (not {"transcript_sha256","audio_ranges_us","transcript","note"}<=set(payload) or set(payload)-{"transcript_sha256","audio_ranges_us","transcript","note","audio_review_sha256"}) or not isinstance(payload["note"],str) or not payload["note"].strip():
         raise RuntimeError("Transcript review requires its current hash, audio ranges, transcript and evidence note")
     old_bytes=(work/"transcript.json").read_bytes(); before_sha=hashlib.sha256(old_bytes).hexdigest()
     if payload["transcript_sha256"]!=before_sha or before_sha!=plan.get("transcript_sha256"):
@@ -796,6 +815,19 @@ def review_transcript(work: Path, review_path: Path) -> dict:
         return [item for item in items if not any(round(item["end"]*1e6)>=left and round(item["start"]*1e6)<=right for left,right in ranges)]
     if outside(old)!=outside(words):
         raise RuntimeError("Transcript review changed words outside its reviewed current-audio intervals")
+    verified=[]
+    if "audio_review_sha256" in payload:
+        receipt=plan.get("caption_audio_review",{})
+        audio_report=read_json(work/"caption-audio-review.json")
+        digest=hashlib.sha256((work/"caption-audio-review.json").read_bytes()).hexdigest()
+        if digest!=receipt.get("sha256") or digest!=payload["audio_review_sha256"] or audio_report.get("transcript_sha256")!=before_sha:
+            raise RuntimeError("Independent caption audio evidence is stale or changed")
+        if audio_report["timeline_audio_sha256"]!=hashlib.sha256((work/"timeline.wav").read_bytes()).hexdigest():
+            raise RuntimeError("Caption review audio changed")
+        for record in audio_report["independent_audio_reviews"]:
+            if hashlib.sha256((work/record["audio_file"]).read_bytes()).hexdigest()!=record["audio_sha256"]:
+                raise RuntimeError("Independent caption review audio changed")
+        verified=[issue["range_us"] for issue in audio_report["issues"] if any(a<=issue["range_us"][0] and issue["range_us"][1]<=b for a,b in ranges)]
     archive=work/("transcript-before-review-"+before_sha+".json")
     with archive.open("xb") as handle:handle.write(old_bytes)
     evidence=work/("transcript-review-"+before_sha+".json")
@@ -808,6 +840,8 @@ def review_transcript(work: Path, review_path: Path) -> dict:
     atomic_write(work/"transcript.json",new_bytes)
     write_json(work/"words.json",{"duration_us":duration,"clip_cuts_us":cuts,"transcript_sha256":after_sha,"words":[{"index":i,**word} for i,word in enumerate(words,1)]})
     plan["transcript_sha256"]=after_sha; plan["report"]["transcript_review"]=report
+    plan["caption_verified_ranges_us"]=verified
+    plan["caption_verified_transcript_sha256"]=after_sha
     write_json(work/"plan.json",plan)
     return report
 
@@ -843,10 +877,27 @@ def apply(work: Path, spec_path: Path | None = None, *, project_closed: bool = F
             if key in meta:
                 meta[key] = draft["duration"]
         payloads[meta_path] = encoded(meta)
-    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit", verify_written=verify_written, project_closed=project_closed)
-    report = {**plan["report"], "backup_suffix": suffix, "project": str(project), "mode": plan["mode"], "validation": validate(draft)}
+    report = {**plan["report"], "project": str(project), "mode": plan["mode"], "validation": validate(draft)}
     if plan["mode"] in CAPTION_MODES:
         report.update(validate_subtitles(draft, plan["settings"],source_blocks=raw_blocks))
+    diagnostic_names=("speech-analysis.json","speech-word-transcript.json","speech-long-word-rechecks.json","speech-pause-audit.json",
+                      "speech-cut-verification.json","speech-candidate-transcript.json","transcript.json","subtitles.json","caption-audio-review.json")
+    diagnostic_names=(*diagnostic_names,*(p.name for p in work.glob("transcript-*-review-*.json")),*(p.name for p in work.glob("transcript-review-*.json")))
+    diagnostic=work.parent/(work.name+"-diagnostics-"+fresh_id()+".json")
+    archive={"schema":1,"status":"validated-before-project-write","source_snapshot":plan["snapshot"],"settings":plan["settings"],"result":report,
+             "evidence":{name:read_json(work/name) for name in diagnostic_names if (work/name).is_file()}}
+    # Establish a durable diagnostic destination before changing the project.
+    # An interrupted commit leaves this staged archive plus the backup manifest.
+    with diagnostic.open("x",encoding="utf-8") as handle:
+        json.dump(archive,handle,ensure_ascii=False);handle.flush();os.fsync(handle.fileno())
+    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit", verify_written=verify_written, project_closed=project_closed)
+    report["backup_suffix"]=suffix
+    report["diagnostics_archive"]=str(diagnostic)
+    archive.update(status="applied-and-validated",result=report)
+    try:
+        atomic_write(diagnostic,encoded(archive))
+    except OSError:
+        report["diagnostics_archive_warning"]="Project applied; archive contains pre-write evidence only. Keep the reported backup suffix."
     cleanup(work)
     return report
 
@@ -945,6 +996,8 @@ def main() -> None:
                 paths = draft_paths(project)
                 draft = read_json(paths[0])
                 report = {"project": str(project), "draft_version": draft.get("version"), "draft_format_version": draft.get("new_version"), "mirrors": [p.relative_to(project).as_posix() for p in paths], **validate(draft)}
+                if any(t.get("name")=="codex_subtitles" and t.get("type")=="text" for t in draft["tracks"]):
+                    report["subtitles"]=validate_subtitles(draft,config)
             elif args.command == "prepare":
                 report = prepare(project, args.mode, args.work_dir.resolve(), config)
             else:

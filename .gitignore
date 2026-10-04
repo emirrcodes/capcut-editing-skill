@@ -23,3 +23,15 @@ draft_content.json
 draft_meta_info.json
 template-*.tmp
 .DS_Store
+
+# Local diagnostic evidence, never package resources
+*-diagnostics-*.json
+caption-audio-review.json
+transcript-review-*.json
+transcript-before-review-*.json
+speech-analysis.json
+speech-pause-audit.json
+speech-cut-verification.json
+speech-candidate-transcript.json
+speech-word-transcript.json
+speech-long-word-rechecks.json

@@ -79,14 +79,14 @@ class PauseIntegrationTests(unittest.TestCase):
     setUp = fixtures.WorkflowTests.setUp
     tearDown = fixtures.WorkflowTests.tearDown
 
-    def run_review(self, raw_speech, crossing="bana", anchor="bana", base_keep=None, rechecks=()):
+    def run_review(self, raw_speech, crossing="bana", anchor="bana", base_keep=None, rechecks=(), crossing_bounds=(200000,1200000)):
         work=self.root/"pause-integration";work.mkdir()
         tool.write_json(work/"speech-long-word-rechecks.json",{"windows":list(rechecks)})
         analysis={"audio_duration_us":2000000,"keep_ranges_us":base_keep if base_keep is not None else [[0,2000000]],
                   "speech_ranges_us":raw_speech,"conservatively_protected_ranges_us":[]}
         result={"segments":[{"start":0,"end":.3,"words":[{"word":"anchor","start":.1,"end":.3}]}]}
         records=[{"range_us":[0,2000000],"core_us":[0,2000000],"voice_keep_us":[],
-                  "word_protection_us":[],"words":[w(crossing,500000,1000000)],"suspect_ranges_us":[]}]*2
+                  "word_protection_us":[],"words":[w(crossing,*crossing_bounds)],"suspect_ranges_us":[]}]*2
         def side_words(result,duration,offset):
             if offset==900000:return [w(anchor,1000000,1200000)],[]
             return [w("harcamak",200000,400000)],[]
@@ -97,7 +97,7 @@ class PauseIntegrationTests(unittest.TestCase):
              patch.object(speech_pauses,"read_audio",return_value=[0]*32000):
             # Local words are injected to represent an approximate crossing word.
             def classify(found,*args):
-                for record in found:record["words"]=[w(crossing,500000,1000000)]
+                for record in found:record["words"]=[w(crossing,*crossing_bounds)]
                 return [{"coverage":2}],[(600000,900000)],[]
             with patch.object(speech_pauses,"classify",side_effect=classify):
                 return speech_pauses.review(self.media,analysis,self.config,work)
@@ -122,3 +122,10 @@ class PauseIntegrationTests(unittest.TestCase):
         report=self.run_review([[0,500000],[1000000,2000000]],
                                base_keep=[[0,600000],[900000,2000000]],rechecks=records)
         self.assertEqual(report["keep_ranges_us"],[[0,2000000]])
+
+    def test_two_uncropped_contexts_restore_weak_word_before_pause_cut(self):
+        report=self.run_review([[0,500000],[1300000,2000000]],
+                               base_keep=[[0,600000],[900000,2000000]],crossing_bounds=(600000,1160000))
+        self.assertEqual(report["keep_ranges_us"],[[0,2000000]])
+        self.assertEqual(report["pause_review"]["independent_context_word_protection_us"],[(580000,1180000)])
+        self.assertEqual(report["pause_review"]["confirmed_non_speech_ranges_us"],[])

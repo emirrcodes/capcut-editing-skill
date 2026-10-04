@@ -80,7 +80,15 @@ def compare(original_transcript: dict, candidate_transcript: dict, original: dic
     for left, right in speech:
         for a, b in intersect(left, right, reviewed):
             reviewed_loss += (b-a) - sum(d-c for c,d in intersect(a,b,keep))
-    return {"original_word_count": len(before), "candidate_word_count": len(after), "changed_or_missing_words": changes,
+    pause=analysis.get("pause_review",{})
+    independent=merge([tuple(span) for key in ("independent_short_word_protection_us","independent_context_word_protection_us")
+                       for span in pause.get(key,[])],original["duration"])
+    independent_loss=sum((b-a)-sum(d-c for c,d in intersect(a,b,keep)) for a,b in independent)
+    reviewed_independent_loss=sum((b-a)-sum(d-c for c,d in intersect(a,b,keep))
+                                 for left,right in independent for a,b in intersect(left,right,reviewed))
+    return {"independent_word_source_loss_us":independent_loss,
+            "unexpected_independent_word_source_loss_us":independent_loss-reviewed_independent_loss,
+            "original_word_count": len(before), "candidate_word_count": len(after), "changed_or_missing_words": changes,
             "vad_supported_source_loss_us": supported_total-supported_kept,
             "user_reviewed_vad_override_us": reviewed_loss,
             "unexpected_vad_supported_source_loss_us": supported_total-supported_kept-reviewed_loss,
@@ -96,6 +104,8 @@ def verify(original: dict, candidate: dict, project: Path, analysis: dict, audio
     report = compare(read_json(work / "speech-word-transcript.json"), result, original, project, analysis)
     report["ordered_source_pieces_verified"] = pieces
     write_json(work / "speech-cut-verification.json", report)
+    if report["unexpected_independent_word_source_loss_us"] > 1000:
+        raise RuntimeError("Candidate removes independently protected word source audio; matching ASR tokens do not prove the prefix survived. Inspect speech-cut-verification.json")
     if report["unexpected_vad_supported_source_loss_us"] > 1000:
         raise RuntimeError("Candidate removes VAD-supported source audio; inspect speech-cut-verification.json and revise before apply")
     return report

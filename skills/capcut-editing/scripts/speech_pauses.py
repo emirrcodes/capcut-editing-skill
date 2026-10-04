@@ -94,6 +94,43 @@ def short_word_guards(rechecks, duration):
                   if 0 < word["end_us"]-word["start_us"] <= 500_000],duration)
 
 
+def context_word_guards(records, speech, duration):
+    """Protect weak words corroborated inside distinct uncropped contexts.
+
+    A second stretched timestamp may corroborate the token and end, but only
+    bounded word times define the guard. Repeated tokens at other positions
+    and words against a context edge cannot establish the acoustic prefix.
+    """
+    observations=[]
+    for index,record in enumerate(records):
+        context=tuple(record["range_us"])
+        for word in record.get("words",[]):
+            left,right=word["start_us"],word["end_us"]
+            if not 0 < right-left <= 1_500_000: continue
+            if left < context[0]+100_000 and context[0]!=0: continue
+            if right > context[1]-100_000 and context[1]!=duration: continue
+            if not context[0]<=left<right<=context[1]: continue
+            if any(a<right and b>left for a,b in record.get("suspect_ranges_us",[])): continue
+            observations.append((index,context,word))
+    guards=[];evidence=[]
+    for index,context,word in observations:
+        left,right=word["start_us"],word["end_us"]
+        if right-left>750_000: continue
+        supported=sum(max(0,min(right,b)-max(left,a)) for a,b in speech)
+        if supported>=max(100_000,(right-left)*.35): continue
+        matches=[(other_index,other_context,other) for other_index,other_context,other in observations
+                 if context!=other_context and token(word["word"])==token(other["word"])
+                 and abs(right-other["end_us"])<=120_000
+                 and min(right,other["end_us"])-max(left,other["start_us"])>=40_000]
+        if not matches: continue
+        guard=(max(0,left-20_000),min(duration,right+20_000))
+        guards.append(guard)
+        evidence.append({"word":word,"context_index":index,"context_us":list(context),
+                         "guard_us":list(guard),"vad_overlap_us":supported,
+                         "corroborating_contexts":[{"context_index":i,"context_us":list(c),"word":w} for i,c,w in matches]})
+    return merge(guards,duration),evidence
+
+
 def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
     from capcut_tool import write_json, read_json
     duration = analysis["audio_duration_us"]; minimum = round(config["speech_min_gap"] * 1e6)
@@ -127,7 +164,8 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                                for span in analysis[key]], duration)
         refinements = read_json(work/"speech-long-word-rechecks.json")["windows"]
         short_guards = short_word_guards(refinements,duration)
-        global_allowed = gaps(merge([*global_speech,*short_guards],duration),duration)
+        context_guards,context_evidence = context_word_guards(records,global_speech,duration)
+        global_allowed = gaps(merge([*global_speech,*short_guards,*context_guards],duration),duration)
         for left, right in candidates:
             allowed = merge([(max(left,a),min(right,b)) for a,b in global_allowed],duration)
             for a,b in allowed:
@@ -165,10 +203,11 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
         report = {"method":"overlapping-context-vad-and-word-anchors", "duration_us":duration,
                   "window_count":len(records),"minimum_independent_coverage":min(p["coverage"] for p in parts),
                   "confirmed_non_speech_ranges_us":confirmed,"decisions":decisions,
-                  "vad_only_kept_ranges_us":voice_only,"independent_short_word_protection_us":short_guards,"records":records,"coverage":parts,
+                  "vad_only_kept_ranges_us":voice_only,"independent_short_word_protection_us":short_guards,
+                  "independent_context_word_protection_us":context_guards,"context_word_protection_evidence":context_evidence,"records":records,"coverage":parts,
                   "note":"All timeline regions are scanned in overlapping contexts. Suspect, missing, and ambiguous anchors stay. VAD-supported source audio is never overridden."}
         write_json(work/"speech-pause-audit.json",report)
-        keep = merge([*(tuple(span) for span in analysis["keep_ranges_us"]),*short_guards],duration)
+        keep = merge([*(tuple(span) for span in analysis["keep_ranges_us"]),*short_guards,*context_guards],duration)
         allowed = gaps(confirmed,duration)
         keep = merge([(max(a,left),min(b,right)) for a,b in keep for left,right in allowed],duration)
         if not keep: raise RuntimeError("Pause review would remove the whole timeline")
@@ -179,7 +218,8 @@ def review(audio: Path, analysis: dict, config: dict, work: Path) -> dict:
                                        "confirmed_non_speech_ranges_us":confirmed,
                                        "context_review_declined_ranges_us":[r["range_us"] for r in decisions if r["status"] != "remove"],
                                        "kept_uncertain_ranges_us":[list(span) for span in retained_declines(decisions,keep,duration)],
-                                       "vad_only_kept_ranges_us":voice_only,"independent_short_word_protection_us":short_guards}})
+                                       "vad_only_kept_ranges_us":voice_only,"independent_short_word_protection_us":short_guards,
+                                       "independent_context_word_protection_us":context_guards}})
         return output
     finally:
         temporary.unlink(missing_ok=True)

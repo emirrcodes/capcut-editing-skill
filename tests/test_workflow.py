@@ -96,7 +96,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(value["materials"]["texts"], [])
 
     def test_non_crossing_word_keeps_natural_start(self):
-        for start, end in ((0.90, 0.95), (0.70, 1.10)):
+        for start, end in ((0.90, 0.95),):
             source = transcript()
             source["segments"][0]["words"][4].update({"start": start, "end": end})
             result = tool.insert_subtitles(draft(self.media), source, {"ranges": [[1, 4], [5, 8]]}, self.config)

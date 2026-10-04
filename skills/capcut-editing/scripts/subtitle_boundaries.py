@@ -21,6 +21,10 @@ def boundary_plan(blocks, draft, *, word_uncertainty_us=0):
         natural=round(first["start"]*1e6); end=round(first["end"]*1e6)
         left_end=max(round(w["end"]*1e6) for w in blocks[index-1])
         gap_cuts=[cut for cut in cuts if left_end-word_uncertainty_us <= cut <= natural]
+        distant_crossings=[cut for cut in cuts if cut-natural > 250_000
+                            and end > cut and left_end-word_uncertainty_us <= cut]
+        if distant_crossings:
+            raise RuntimeError(f"First word of block {index+1} crosses a cut beyond the 250 ms alignment window. Independent current clip audio review is required; refine word times or regroup continuous speech, never keep the early caption silently.")
         early_cuts=[cut for cut in cuts if 0 < cut-natural <= 250_000
                     and end+word_uncertainty_us > cut and left_end-word_uncertainty_us <= cut]
         candidates=sorted(set(gap_cuts+early_cuts))
