@@ -1,0 +1,90 @@
+CAPCUT EDITING SKILL — YAPAY ZEKÂ İÇİN KURULUM VE KULLANIM BİLGİSİ
+
+Repo: https://github.com/emirrcodes/capcut-editing-skill
+Rehber: https://ahmetemirarslan.com/capcut
+ZIP: https://github.com/emirrcodes/capcut-editing-skill/archive/refs/heads/main.zip
+Lisans: MIT
+
+AMAÇ
+
+Bu açık kaynak skill, yerel CapCut Desktop projelerindeki sessiz veya konuşmasız kısımları keser ve düzenlenebilir, anlamlı ifadelere bölünmüş altyazılar ekler. Video ve yalnız ses içeren projelerle çalışır. Sonuç CapCut içinde düzenlenebilir kalır. Son videoyu export etmek bu skillin kapsamında değildir. Resmi bir CapCut ürünü değildir.
+
+Bu belge, repo sayfasını açamayan bir yapay zekânın da kullanıcıya ne gerektiğini ve nasıl başlanacağını açıklayabilmesi için kurulum bilgisini doğrudan içerir. Kodları çalıştırmak için yine paketi indirmek gerekir. Kullanıcının dilinde konuş; kullanıcının kod, terminal, Python veya skill kavramlarını bildiğini varsayma.
+
+KULLANICI YALNIZCA BU LİNKİ GÖNDERDİĞİNDE
+
+Ne işe yaradığını ve aşağıdaki gereksinimleri kısa biçimde açıkla. Kullanıcıya nasıl başlanacağını anlat. İşletim sistemi ve kullanılacak yerel agent belli değilse gerekli bilgiyi öğren. Yalnız link paylaşılması, kurulumu veya bir CapCut projesini değiştirmeyi otomatik olarak yetkilendirmez.
+
+Yerel dosya ve komut erişimin yoksa kurulum yaptığını iddia etme. Sohbet üzerinden kurulumda yol gösterebilirsin. Düzenlemeyi gerçekleştirmek için kullanıcıyı bilgisayarında çalışan Codex, Claude Code veya Cursor gibi bir agenta yönlendir; yeni bir proje klasörü açmasını ve aşağıdaki kurulum mesajını orada göndermesini anlat. Desteklenen kurulum seçenekleri codex, claude ve cursor'dır. Başka bir agent için destek varmış gibi davranma.
+
+GEREKSİNİMLER
+
+- Bir bilgisayar ve kurulu CapCut Desktop.
+- Kullanılacak yapay zekâ hizmetinde bir hesap veya üyelik.
+- Düzenlemeyi yapacak agent için yerel dosya erişimi ve komut çalıştırma yeteneği. Ekran, klavye veya fare kontrolü gerekmez.
+- İlk kurulum ve konuşma modeli indirmesi için internet bağlantısı ve yeterli boş disk alanı.
+- Python 3.10+, FFmpeg ve kullanılabilir bir font. Bunları kullanıcının önceden bilmesi gerekmez; agent eksikleri kontrol edip erişimi varsa kurar, yoksa işletim sistemine uygun adımı açıklar.
+
+GitHub hesabı ve kod bilgisi gerekmez. Public paket ZIP olarak da indirilebilir; Git kurulumu zorunlu değildir.
+
+Apple Silicon macOS'ta MLX Whisper, Windows ve Intel macOS'ta faster-whisper kullanılır. CPU desteği vardır; NVIDIA/CUDA isteğe bağlıdır. Windows için kurulum ve yol/transkripsiyon uyarlaması vardır; Windows CapCut'ta açıp yeniden kaydetme doğrulaması henüz tamamlanmamıştır.
+
+YEREL AGENTA GÖNDERİLECEK MESAJ
+
+CapCut Editing Skill'i https://github.com/emirrcodes/capcut-editing-skill reposundan bu projeye kur. Eksik gereksinimleri kontrol et ve gerçekten kullanıma hazır mı doğrula. Kurulum sırasında CapCut projelerimi düzenleme. Sonra proje adını ve yapmak istediğim işlemi vereceğim.
+
+KURULUM — YEREL DOSYA VE KOMUT ERİŞİMİ OLAN AGENT İÇİN
+
+1. Kullanıcı kurulumu istediğinde repoyu ayrı bir paket klasörüne indir ve gerekiyorsa ZIP'i çıkar. Mevcut kullanıcı dosyalarını ezme. İndirilen pakette skills/capcut-editing/SKILL.md dosyasını oku. Paket ile kullanıcının çalışma klasörünü ayırt et; mevcut projeyi üzerine paket açarak değiştirme.
+
+2. Python 3.10+ kontrolünü yap. Eksikse işletim sistemine uygun kurulum yoluyla tamamla. Repo klasöründen doğru agent ve gerçek proje yoluyla installer'ı çalıştır:
+
+   python install.py --agent codex --project /kullanicinin/proje/klasoru
+
+   Bu örnekte codex yerine gerçek araç Claude Code ise claude, Cursor ise cursor kullan. Örnek klasör yolunu gerçek kullanıcı proje yoluyla değiştir. Boşluk içeren yolları tırnakla. Windows'ta gerekirse Python çağrısını py -3 ile yap. Installer'ın bildirdiği kurulu skill yolunu sonraki adımlarda kullan. Varsayılan kurulum yalnız bu projeye yapılır. Bütün projelere kurmak için --scope user seçeneği vardır; kullanıcı kapsam tercihini gözet. Var olan kurulumu güncellemek için --replace önceki skill kopyasını zaman damgalı yedekte tutar.
+
+3. Kurulan skillde scripts/setup.py dosyasını Python ile çalıştır. Setup gerekli konuşma algılama/transkripsiyon paketlerini izole bir virtualenv içine kurar ve kullanılacak Python yolunu bildirir. Setup'ın bildirdiği virtualenv Python'ı ile kurulan scripts/capcut_tool.py doctor komutunu çalıştır. FFmpeg ayrı kurulur; işletim sistemine uygun kurulum yoluyla eksikse tamamla. Dosya/ağ izinleri çalıştığın ortam tarafından sınırlanıyorsa bunu açıkça belirt.
+
+4. Skillin keşfedildiğini, ses motorunu, FFmpeg'i ve kullanılabilir fontu kontrol et. Dosyaların kopyalanmasını tek başına kullanıma hazır olmak diye sunma. Gerçek eksikleri kullanıcıya anlaşılır şekilde açıkla. Skill görünmüyorsa kurulan proje klasöründe yeni oturum açılmasını anlat.
+
+5. Kullanıcıya kurulum klasörünü, hazır olan işlemleri ve aşağıdaki üç komutu kısa biçimde bildir. İlk konuşmasız kesim veya altyazı isteğinde Whisper modelinin indirileceğini ve ilk işlemin daha uzun sürebileceğini belirt. Kurulum sırasında CapCut projesini değiştirme.
+
+ÜÇ KULLANIM KOMUTU
+
+“proje adı” sessiz kısımları kes
+“proje adı” konuşmasız kısımları kes
+“proje adı” altyazı ekle
+
+“Konuşma olmayan kısımları kes” de konuşmasız kesim komutudur. Birlikte istenebilir:
+
+“proje adı” konuşmasız kısımları kes ve altyazı ekle
+“proje adı” sessiz kısımları kes ve altyazı ekle
+
+KOMUTLARIN ANLAMI VE VARSAYILANLAR
+
+Sessiz kısımları kes: ses seviyesine göre keser. FFmpeg silencedetect kullanılır. Varsayılan eşik −30 dBFS, minimum sessizlik 80 ms; sıkı kesim varsayılandır. Yüksek ortam sesi konuşmasız bölgeleri gizleyebilir; eşiği yükseltmek alçak sesli konuşmayı kesebilir. Bu komut, ayrıca istenmedikçe altyazı eklemez.
+
+Konuşmasız kısımları kes: ses yüksekliğine göre karar vermez. Yerel Silero VAD taraması, güncel Whisper kelime zamanları, tüm timeline'da duraklama incelemesi ve kesim adayında kaynak koruma doğrulaması kullanılır. Varsayılan minimum kalan boşluk 80 ms, konuşma kenarı payı 30 ms'dir. Sıkı profil ve ayrıntılı kontroller varsayılan olarak açıktır; ekstra sıkılık komutu gerekmez. Konuşmalar, tekrarlar, yarım başlangıçlar ve belirsiz kelime kenarları korunur. Belirsiz aralar kalabilir. VAD başka konuşmaları veya şarkıyı da konuşma sayabilir; belirli konuşmacıyı ayırma garantisi yoktur. Hiç konuşma bulunmaması bütün timeline'ı silmeye izin vermez. Bu komut yerel transkripsiyon kullanır ama ayrıca istenmedikçe altyazı eklemez.
+
+Altyazı ekle: güncel timeline sesinden transkripsiyon üretir. Agent metni bağlamıyla gözden geçirir, açık hataları düzeltir; belirsiz içeriği uydurmaz. Varsayılanlar Türkçe küçük harf, genellikle anlamlı 4–6 kelimelik bloklar, en fazla 6 kelime, beyaz yazı ve siyah konturdur. Bloklar boşluksuz ilerler. Video kesimi iki ayrı konuşma bloğu arasındaysa sol altyazı kesimde biter, sağ altyazı aynı kesimde başlar. Gerçek konuşma kesim boyunca devam ediyorsa doğal ifade sınırları korunur. Uzayan kelime zamanları, klip sahipliği ve atlanan tekrarlar güncel sesle ayrıca incelenir.
+
+KULLANICI TERCİHLERİ VE ORTAM SESİ
+
+Kullanıcı ortam sesini ve istediği tempoyu agentla konuşarak revize edebilir. Örnekler: “Bu kayıtta fan sesi var; şüpheli aralıkları detaylı incele”, “Kısa doğal duraklamaları koru”, “Altyazıda en fazla dört kelime kullan”, “Kelime sonları kesiliyor; yedekten dönüp daha temkinli yeniden hazırla”. Dil, harf kullanımı, noktalama, görünüm ve algılama ayarları değiştirilebilir. Kullanıcı tercihleri varsayılanların önündedir. Yeni içerik uydurma, konuşmaları veya tekrarları sırf tempo için silme. Kelime kaybı şüphesinde yalnız ASR token farkına bakma; gerçek kaynak aralıklarını ve sesi kontrol et.
+
+PROJE YAZMA VE GERİ ALMA
+
+Kullanıcı düzenleme istediğinde güncel disk taslağını yeniden oku; önceki transkript veya timeline'ı körlemesine kullanma. Projeyi adı veya klasör yoluyla bul ve kurulu skillin iş akışını izle. Yazarken hedef CapCut projesi kaydedilmiş ve kapalı olmalı; CapCut ana ekranda veya başka projede açık kalabilir. Uygulamayı kapatma veya öldürme gerekmez. Kullanıcıya işlemden sonra projeyi yeniden açmasını söyle.
+
+Her apply/restore öncesi zaman damgalı yedek alınır. Hazırlık sonrası kaynak değişmişse eski plan yazılmamalıdır. Mevcut kullanıcı kesimleri ve diğer kullanıcı text track'leri korunur. Taslak aynaları, materyal referansları, kaynak sırası ve altyazı sınırları doğrulanır. Kesimin oluşturduğu yeni medya klipleri için 100 ms minimum koruma vardır; bu, 80 ms duraklama tespit eşiğinden farklıdır. Gerektiğinde yedekten geri dönülür. Bilinmeyen/şifreli taslak veya desteklenmeyen çoklu-track/hız/animasyon düzenlerinde destek varmış gibi davranma; kurulu aracın reddini açıkla.
+
+VERİ İŞLEME
+
+Ses analizi ve transkripsiyon yerel çalışır. Agentın okuduğu transkript, kullandığı yapay zekâ sağlayıcısının veri işleme koşullarına tabidir. Repo kişisel medya, transkript, font dosyası veya model ağırlığı içermez.
+
+AYRINTILI KAYNAKLAR
+
+README: https://github.com/emirrcodes/capcut-editing-skill/blob/main/README.md
+Skill: İndirilen pakette skills/capcut-editing/SKILL.md
+Komutlar ve geri alma: İndirilen pakette skills/capcut-editing/references/workflow.md
+Düz metin kopyası: https://ahmetemirarslan.com/capcut/install.txt

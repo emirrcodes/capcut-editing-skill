@@ -4,7 +4,9 @@ CapCut Desktop projelerindeki sessiz veya konuşmasız kısımları kesmek ve an
 
 ## Bu linki yapay zekânıza gönderin
 
-Başlamak için bu repo’nun linkini kullandığınız herhangi bir yapay zekâya gönderip **“Bunu kullanmak istiyorum; neye ihtiyacım var ve nasıl kurarım?”** demeniz yeterli. Yapay zekâ bu README’den ne işe yaradığını, gereksinimleri ve kurulum adımlarını öğrenip size açıklayabilir. GitHub hesabınızın veya kod yazma bilginizin olması gerekmez.
+Başlamak için [düz metin kurulum rehberini](https://ahmetemirarslan.com/capcut) kullandığınız yapay zekâya gönderip **“Bunu kullanmak istiyorum; neye ihtiyacım var ve nasıl kurarım?”** deyin. Rehber, GitHub sayfasına erişemeyen modeller için de gereksinimleri ve kurulum adımlarını doğrudan içerir. GitHub hesabınızın veya kod yazma bilginizin olması gerekmez.
+
+Her sohbet servisi bağlantıları açamayabilir. Link açılamıyorsa rehberdeki metni kopyalayıp sohbete yapıştırın; aynı metin repoda [website/guide.txt](website/guide.txt) dosyasında da bulunur. Kurulum paketinin kaynağı bu GitHub reposudur.
 
 İhtiyacınız olanlar:
 
