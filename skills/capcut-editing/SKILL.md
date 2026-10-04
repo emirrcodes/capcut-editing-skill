@@ -18,11 +18,13 @@ No computer/screen control is needed. Before apply/restore, CapCut must be close
 ## Execute the requested mode
 
 - “sessiz kısımları kes”: prepare --mode silence, preview, apply. Detect low audio level with FFmpeg; do not add subtitles unless requested.
-- “konuşmasız kısımları kes” / “konuşma olmayan kısımları kes”: prepare --mode speech, inspect speech-analysis.json and preview, apply. Scan for actual speech with VAD and review candidate gaps; never route this request to amplitude-only cutting or silently fall back when speech dependencies are missing.
+- “konuşmasız kısımları kes” / “konuşma olmayan kısımları kes”: prepare --mode speech, inspect speech-analysis.json and preview, apply. Scan for actual speech with VAD and review candidate gaps. For high background noise, weak words, or an explicitly tighter pace, enable speech_word_review to cross-check VAD with current word timestamps; see [workflow.md](references/workflow.md). Never route this request to amplitude-only cutting or silently fall back when dependencies are missing.
 - “altyazı ekle”: prepare --mode subtitles against the current disk timeline, create semantic ranges, preview, apply. Do not change the media cuts.
 - Combined requests: silence + subtitles uses --mode both; non-speech + subtitles uses --mode speech-subtitles. Create semantic ranges from the newly cut timeline, preview, and apply in the same request.
 
 Use a fresh working directory outside the CapCut project and tracked package files. Preparation records file fingerprints without writing to the project. Speech cutting scans the current timeline audio; caption modes transcribe the proposed timeline. Read the mode's report and words.json when generated. Run preview and resolve validation errors, then apply the user's authorized edit without adding a separate approval step. If source files changed, prepare again. Apply commits all mirror copies with timestamped backups and attempts recovery on failure.
+
+Cutting checks every kept intersection with existing media clips. To avoid new pieces below 100 ms, preparation keeps extra audio inside the same original clip; it reports boundary_protection_ranges_us. Existing short clips stay whole. The low-level cutter and final validation reject new/shortened micro-clips, including after writing; never silently discard a fragment or join discontinuous source ranges to bypass this guard. Check the reported extra audio when tight pacing matters.
 
 ## Semantic captions and cut alignment
 
@@ -39,3 +41,5 @@ Report old/new/removed duration for cutting, caption count for subtitles, and th
 For explicit preferences, use an external JSON configuration based on [references/config.example.json](references/config.example.json). Prepare again after changing settings. See [references/workflow.md](references/workflow.md) for restore and separate silence/speech controls.
 
 When noise or clipped speech is mentioned, inspect the current audio and the candidate removed/protected ranges, especially uncertain intervals. Help revise the selected mode's settings using that evidence. Lower VAD thresholds protect more possible speech; more padding protects word edges. VAD may retain background voices or singing and does not isolate the intended speaker. If a pass clipped words, restore the pre-edit backup before recutting: another pass cannot recover removed source ranges. A no-speech result stops without deleting the entire timeline.
+
+Word review does not add captions. Compression ratios above 2.4 and suspicious no-speech decoding trigger bounded independent rechecks without previous-text conditioning; unresolved ranges are kept for inspection. Word timestamps are approximate: inspect long_word_timing_ranges_us (over 1.5 s) against the audio, especially leading/trailing noise. This flag does not prove hallucination or authorize discarding the word. A word disappearing in a second transcript alone does not prove its audio was cut; inspect retained source ranges and the audio. A tighter pace does not authorize removing spoken repetitions or false starts. Re-read the disk timeline after CapCut resaves it, because frame rounding may change durations.

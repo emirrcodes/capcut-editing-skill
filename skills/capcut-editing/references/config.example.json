@@ -17,6 +17,7 @@
   "speech_review_context": 0.40,
   "speech_review_window": 30.0,
   "speech_review_max_gain": 4.0,
+  "speech_word_review": false,
   "max_words": 6,
   "lowercase": true,
   "keep_terminal_punctuation": false,

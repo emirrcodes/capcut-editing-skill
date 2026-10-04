@@ -23,6 +23,7 @@ from draft_primitives import (
     apply_timeline_keep_ranges, atomic_write, fresh_id,
     remove_previous_codex_subtitles, resolve_draft_media_path,
     subtitle_lower, turkish_lower, word_timing_payload, wrap_display_text,
+    MIN_CLIP_US, protect_cut_boundaries, validate_cut_fragments,
 )
 
 HERE = Path(__file__).resolve().parent
@@ -39,6 +40,7 @@ DEFAULTS = {
     "speech_min_duration": 0.10, "speech_min_gap": 0.30,
     "speech_padding": 0.12, "speech_review_context": 0.40,
     "speech_review_window": 30.0, "speech_review_max_gain": 4.0,
+    "speech_word_review": False,
 }
 MODES = ("silence", "speech", "subtitles", "both", "speech-subtitles")
 CUT_MODES = {"silence", "speech", "both", "speech-subtitles"}
@@ -88,7 +90,7 @@ def validate_settings(config: dict) -> dict:
             raise RuntimeError(f"Invalid numeric setting: {key}")
     if config["min_silence"] <= 0 or config["min_keep"] <= 0 or config["merge_gap"] < 0 or config["font_size"] <= 0 or config["stroke_width"] < 0:
         raise RuntimeError("Durations/font size must be positive; merge gap/stroke must be nonnegative")
-    for key in ("lowercase", "keep_terminal_punctuation"):
+    for key in ("lowercase", "keep_terminal_punctuation", "speech_word_review"):
         if not isinstance(config[key], bool):
             raise RuntimeError(f"{key} must be true or false")
     for key in ("color", "stroke_color"):
@@ -310,6 +312,10 @@ def cut_silence(draft: dict, project: Path, config: dict) -> tuple[dict, dict]:
     removed = 0
     for segment in primary_track(output)["segments"]:
         source = segment["source_timerange"]
+        if segment["target_timerange"]["duration"] < MIN_CLIP_US:
+            origin = segment["target_timerange"]["start"]
+            keep.append((origin, origin + segment["target_timerange"]["duration"]))
+            continue
         silences = detect_silence(media_for(output, project, segment), source["start"], source["duration"], config)
         removed += len(silences)
         cursor = 0
@@ -320,9 +326,11 @@ def cut_silence(draft: dict, project: Path, config: dict) -> tuple[dict, dict]:
             cursor = max(cursor, end)
     if not keep:
         raise RuntimeError("All audio is below the silence threshold. No files were changed; adjust settings.")
+    keep, boundary_protection = protect_cut_boundaries(output, keep)
     apply_timeline_keep_ranges(output, keep)
     validate(output)
-    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "detected_silence_ranges": removed}
+    validate_cut_fragments(output, draft)
+    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "detected_silence_ranges": removed, "boundary_protection_ranges_us": boundary_protection}
 
 
 def extract_audio(draft: dict, project: Path, output: Path, config: dict) -> None:
@@ -353,6 +361,9 @@ def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[di
     original_audio = work / "speech-original.wav"
     extract_audio(draft, project, original_audio, config)
     analysis = analyze(original_audio, config)
+    if config["speech_word_review"]:
+        from speech_words import review
+        analysis = review(original_audio, analysis, config, work)
     # Rendered PCM is rounded to audio samples; clamp the final microseconds
     # to the actual timeline rather than inventing a gap at its end.
     keep = merge([tuple(span) for span in analysis["keep_ranges_us"]], draft["duration"])
@@ -360,13 +371,18 @@ def cut_speech(draft: dict, project: Path, work: Path, config: dict) -> tuple[di
         raise RuntimeError("Speech scanning produced no kept ranges")
     if analysis["audio_duration_us"] - keep[-1][1] <= 1000:
         keep[-1] = (keep[-1][0], draft["duration"])
+    keep, boundary_protection = protect_cut_boundaries(draft, keep)
     analysis["keep_ranges_us"] = [list(span) for span in keep]
+    from speech_scan import gaps
+    analysis["removed_ranges_us"] = [list(span) for span in gaps(keep, draft["duration"])]
+    analysis["boundary_protection_ranges_us"] = boundary_protection
     write_json(work / "speech-analysis.json", analysis)
     output = copy.deepcopy(draft)
     remove_previous_codex_subtitles(output)
     apply_timeline_keep_ranges(output, keep)
     validate(output)
-    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "speech_detection": analysis["method"], "reviewed_gap_windows": len(analysis["gap_reviews"]), "conservatively_protected_regions": len(analysis["conservatively_protected_ranges_us"])}
+    validate_cut_fragments(output, draft)
+    return output, {"old_duration_us": draft["duration"], "new_duration_us": output["duration"], "removed_duration_us": draft["duration"] - output["duration"], "speech_detection": analysis["method"], "reviewed_gap_windows": len(analysis["gap_reviews"]), "conservatively_protected_regions": len(analysis["conservatively_protected_ranges_us"]), "boundary_protection_ranges_us": boundary_protection, "word_review": analysis.get("word_review")}
 
 
 def font_path(config: dict) -> str:
@@ -554,7 +570,7 @@ def require_closed() -> None:
         raise RuntimeError("Close CapCut before writing draft files, then rerun apply. No GUI control is used.")
 
 
-def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation: str) -> str:
+def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation: str, verify_written=None) -> str:
     require_closed()
     assert_snapshot(project, expected)
     time.sleep(0.25)
@@ -595,6 +611,8 @@ def commit(project: Path, payloads: dict[Path, bytes], expected: dict, operation
             for path, content in payloads.items():
                 if path.read_bytes() != content:
                     raise RuntimeError("Written file differs from prepared payload")
+            if verify_written:
+                verify_written()
         except BaseException as failure:
             errors = []
             for path, content in originals.items():
@@ -672,6 +690,8 @@ def build_result(work: Path, spec_path: Path | None) -> tuple[dict, dict, Path]:
             raise RuntimeError("Transcript/spec belongs to another preparation. Build new semantic blocks from the current words.json")
         draft = insert_subtitles(draft, read_json(transcript_path), spec, config)
     validate(draft)
+    if plan["mode"] in CUT_MODES:
+        validate_cut_fragments(draft, read_json(draft_paths(project)[0]))
     return draft, plan, project
 
 
@@ -686,6 +706,12 @@ def settings_from_plan(plan: dict) -> dict:
 
 def apply(work: Path, spec_path: Path | None = None) -> dict:
     draft, plan, project = build_result(work, spec_path)
+    original = read_json(draft_paths(project)[0])
+    def verify_written():
+        current = read_json(draft_paths(project)[0])
+        validate(current)
+        if plan["mode"] in CUT_MODES:
+            validate_cut_fragments(current, original)
     payload = encoded(draft)
     payloads = {path: payload for path in draft_paths(project)}
     meta_path = project / "draft_meta_info.json"
@@ -695,7 +721,7 @@ def apply(work: Path, spec_path: Path | None = None) -> dict:
             if key in meta:
                 meta[key] = draft["duration"]
         payloads[meta_path] = encoded(meta)
-    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit")
+    suffix = commit(project, payloads, plan["snapshot"], "silencecut" if plan["mode"] == "silence" else "speechcut" if plan["mode"] == "speech" else "subtitles" if plan["mode"] == "subtitles" else "edit", verify_written=verify_written)
     report = {**plan["report"], "backup_suffix": suffix, "project": str(project), "mode": plan["mode"], "validation": validate(draft)}
     if plan["mode"] in CAPTION_MODES:
         report.update(validate_subtitles(draft, plan["settings"]))
@@ -705,7 +731,7 @@ def apply(work: Path, spec_path: Path | None = None) -> dict:
 
 def cleanup(work: Path) -> dict:
     read_json(work / WORK_MARKER)
-    for name in ("timeline.wav", "speech-original.wav", "speech-analysis.json", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
+    for name in ("timeline.wav", "speech-original.wav", "speech-analysis.json", "speech-word-transcript.json", "speech-word-recheck.json", "speech-word-review.wav", "transcript.json", "words.json", "prepared.json", "subtitles.json", "plan.json", "preview.json", WORK_MARKER):
         path = work / name
         if path.is_file() or path.is_symlink():
             path.unlink()

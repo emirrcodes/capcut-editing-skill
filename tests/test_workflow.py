@@ -274,15 +274,18 @@ class WorkflowTests(unittest.TestCase):
                 self.assertTrue(tool.is_capcut_running())
 
     def test_faster_adapter_preserves_original_word_timestamps(self):
-        sample = types.SimpleNamespace(start=0.1, end=0.4, text=" merhaba", words=[types.SimpleNamespace(start=0.1, end=0.4, word=" merhaba")])
+        sample = types.SimpleNamespace(start=0.1, end=0.4, text=" merhaba", compression_ratio=5.39, avg_logprob=-0.2, no_speech_prob=0.1, words=[types.SimpleNamespace(start=0.1, end=0.4, word=" merhaba")])
         mock_model = unittest.mock.Mock()
         mock_model.transcribe.return_value = (iter([sample]), types.SimpleNamespace(language="tr"))
         module = types.SimpleNamespace(WhisperModel=unittest.mock.Mock(return_value=mock_model))
         with patch.object(transcribe, "choose_backend", return_value="faster"), patch.dict(sys.modules, {"faster_whisper": module}):
-            result = transcribe.transcribe(self.media, self.config)
+            result = transcribe.transcribe(self.media, self.config, speech_review=True)
         self.assertEqual(result["segments"][0]["words"][0], {"start": 0.1, "end": 0.4, "word": " merhaba"})
         self.assertFalse(mock_model.transcribe.call_args.kwargs["vad_filter"])
         self.assertTrue(mock_model.transcribe.call_args.kwargs["word_timestamps"])
+        self.assertEqual(result["segments"][0]["compression_ratio"], 5.39)
+        self.assertFalse(mock_model.transcribe.call_args.kwargs["condition_on_previous_text"])
+        self.assertEqual(mock_model.transcribe.call_args.kwargs["hallucination_silence_threshold"], 2.0)
 
     def test_packaged_template_contains_no_personal_content(self):
         asset = tool.read_json(ROOT / "skills/capcut-editing/assets/subtitle-template.json")
@@ -294,12 +297,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(asset["text"]["words"]["text"], [])
 
     def test_mlx_adapter_normalizes_timestamps_and_uses_turkish(self):
-        module = types.SimpleNamespace(transcribe=unittest.mock.Mock(return_value=transcript()))
+        source = transcript()
+        source["segments"][0]["compression_ratio"] = 5.39
+        module = types.SimpleNamespace(transcribe=unittest.mock.Mock(return_value=source))
         with patch.object(transcribe, "choose_backend", return_value="mlx"), patch.dict(sys.modules, {"mlx_whisper": module}):
-            result = transcribe.transcribe(self.media, self.config)
+            result = transcribe.transcribe(self.media, self.config, speech_review=True)
         self.assertEqual(result["segments"][0]["words"], transcript()["segments"][0]["words"])
         self.assertEqual(module.transcribe.call_args.kwargs["language"], "tr")
         self.assertTrue(module.transcribe.call_args.kwargs["word_timestamps"])
+        self.assertEqual(result["segments"][0]["compression_ratio"], 5.39)
+        self.assertEqual(module.transcribe.call_args.kwargs["hallucination_silence_threshold"], 2.0)
 
     def test_silence_merge_and_minimum_kept_slice(self):
         log = "silence_start: 0.05\nsilence_end: 0.30\nsilence_start: 0.40\nsilence_end: 0.70\n"

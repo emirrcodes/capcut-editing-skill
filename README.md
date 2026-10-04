@@ -30,6 +30,8 @@ Agent, mevcut CapCut timeline'ını okur; birleşik istekte kesim ve altyazıyı
 
 **Konuşmasız kesim ses yüksekliğine göre karar vermez.** Yerel [Silero VAD](https://github.com/snakers4/silero-vad) modeli konuşma bölgelerini bulur. Aday konuşmasız aralıklar çevrelerindeki sesle birlikte tekrar taranır; düşük sesli bölümler analiz sırasında güçlendirilerek de kontrol edilir. İkinci geçişte bulunan olası konuşma korunur. Kelime kenarlarında varsayılan 0.12 saniye pay ve 0.30 saniyeden kısa doğal duraklamalar korunur. Bu, fan/trafik gibi gürültüyü konuşmadan ayırmayı amaçlar; başka konuşmalar veya şarkı da konuşma sayılabilir. Amaçlanan konuşmacıyı tek başına ayırma garantisi yoktur. Hiç konuşma bulunmazsa tüm videoyu silmek yerine işlem durur.
 
+**Yüksek gürültüde ek kelime kontrolü:** Agent `speech_word_review` seçeneğini açarak güncel sesin Whisper kelime zamanlarını VAD ile birlikte inceleyebilir. Zayıf konuşmanın ve kelime içindeki kısa boşlukların korunmasına yardımcı olur. Şüpheli tekrarlı transkripsiyonlar bağımsız olarak yeniden taranır; çözülemeyen aralıklar korunur. Kelime zamanları gürültüye doğru uzayabildiğinden bazen ek konuşmasız ses de korunabilir; uzun kelime zamanları raporda işaretlenir ve agent sesi inceleyerek revize edebilir. Bu inceleme altyazı eklemez; yerel transkripsiyon modeli gerektirir. Daha sıkı tempo ayrıca istenebilir; konuşulan tekrarları veya yanlış başlangıçları temizlemek ayrı bir istektir.
+
 Varsayılan altyazılar Türkçe, küçük harf, beyaz ve siyah konturludur. Anlamlı bloklar genellikle **4–6 kelime**, en fazla 6 kelimedir; kısa tam ifadeler daha kısa olabilir. Altyazılar boşluksuz ilerler. Klip değişiminde sonraki bağlamın metni önceki klipte görünmesin diye, kesimden en fazla 0.25 saniye önce başlayıp kesim sonrasına uzanan ilk kelimenin blok başlangıcı kesime hizalanır. Konuşma klipler arasında devam ediyorsa doğal ifade sınırları korunur.
 
 Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum, sessizlik ve konuşma algılama ayarları değiştirilebilir. Agentınıza tercihinizi söyleyin; references/config.example.json üzerinden dışarıda bir ayar dosyası oluşturabilir. Kullanıcı tercihleri varsayılanların önündedir.
@@ -40,6 +42,8 @@ Kelime sayısı, dil, büyük/küçük harf, noktalama, font, boyut, renk, konum
 
 ```text
 “Bu kayıtta fan sesi var; konuşmasız kısımları kes, şüpheli aralıkları detaylı incele”
+“Ortam sesi çok yüksek; VAD ile kelime zamanlarını birlikte kontrol et”
+“Konuşma uçlarını koruyarak daha kısa duraklamaları da kes”
 “Kelime sonları fazla kesiliyor; daha temkinli ayarlarla yeniden hazırla”
 “Kısa doğal duraklamaları koru, uzun sessizlikleri kes”
 ```
@@ -65,6 +69,8 @@ Use `--scope user` only if you want the skill available across projects. `--repl
 
 Supports readable JSON draft_info.json or draft_content.json layouts and detected full-draft mirrors in a single timeline. All detected full copies must agree before an edit. Cutting supports one forward 1.0x media track and optional previous codex_subtitles. Multi-track cutting, speed ramps, reversed/animated primary clips, transitions, encrypted drafts, and unknown schemas are rejected. Subtitle-only editing preserves user text tracks and replaces only codex_subtitles.
 
+Cutting checks the pieces created at existing clip boundaries, not only global keep ranges. To prevent new clips below 100 ms, it keeps a little extra audio within the same original clip and reports those intervals. Existing short clips stay whole. Direct cutting and final validation reject new or shortened micro-clips; discontinuous source ranges are never joined into one continuous clip to bypass the check.
+
 Every apply/restore creates timestamped backups before project writes. Source fingerprints prevent applying stale work. A failed write attempts recovery; crashes or storage failures may still need restore from the manifest. Keep the reported backup suffix. Temporary audio/transcript files are cleaned after successful apply; the cleanup command handles abandoned preparations. No export/render of the final video is included.
 
 The subtitle template contains schema/style defaults only: no personal project text, paths, footage, font binaries, or account identifiers. Compatibility is constrained by CapCut's changing draft format. Automated tests use synthetic projects; they do not prove compatibility with every CapCut version. This is an independent project, not an official CapCut product.
@@ -77,6 +83,6 @@ python -m unittest discover -s tests -v
 python skills/capcut-editing/scripts/capcut_tool.py doctor
 ```
 
-Tests cover real FFmpeg cuts, bundled VAD rejection of loud stationary noise, sensitive gap review, separate speech/caption modes, audio-only drafts, caption timing, preserved user tracks, stale-plan refusal, backup recovery/restore, alternate layouts, and all three agent installers. Transcription adapters are tested without downloading Whisper weights. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
+Tests cover real FFmpeg cuts, bundled VAD rejection of loud noise, weak-word protection, independent checks of suspicious ASR repetitions, three-millisecond clip-boundary regressions, preserved existing short clips, post-write validation/rollback, separate speech/caption modes, caption timing, stale-plan refusal, alternate layouts, and all three agent installers. Transcription adapters are tested without downloading Whisper weights. Native CapCut/Windows round trips should be recorded separately before changing the compatibility claims.
 
 MIT licensed. See [LICENSE](LICENSE).

@@ -1,10 +1,11 @@
-# v0.2.0 validation
+# v0.3.0 validation
 
-- 27 automated tests passed locally on an Apple Silicon Mac with Python 3.12 and FFmpeg. The real bundled Silero VAD rejected generated stationary noise above the -30 dBFS silence threshold, with no Whisper model download.
-- Speech-mode tests cover sensitive gap review, weak-speech protection, padding, short natural pauses, long-gap windows, missing-dependency refusal, no-speech refusal, separate caption/cutting modes, identical draft mirrors, and speech-cut backup restoration.
-- A synthetic Turkish voice mixed with fan-like background noise at -25.19 dBFS was processed using real CPU Silero VAD. The amplitude method removed 0 seconds; speech scanning removed 5.501 seconds from 12.749 seconds, leaving 7.248 seconds. Three candidate gaps were reviewed, protecting three additional speech-edge regions.
-- The proposed noisy-recording timeline was transcribed by the real local MLX Whisper large-v3-turbo adapter. All 12 synthesized Turkish words were present, and two semantic six-word subtitle blocks passed timing/schema validation over the new 7.248-second timeline.
-- Skill frontmatter/package validation passed. Transcription adapters, preserved user text tracks, cut alignment, stale-input rejection, fault-injected recovery, alternate draft layouts, and all three agent installers remain covered.
-- The GitHub Actions matrix runs the synthetic-project suite, including the bundled CPU VAD test, on macOS, Windows, and Linux. Check the workflow status for the release commit separately; local results do not imply those jobs passed.
-- Windows CapCut editor round-trip verification is pending. Tests do not prove native editor compatibility across CapCut versions.
-- No actual user CapCut project was edited during development. All media/drafts used in tests were temporary synthetic artifacts; none are distributed.
+- 41 automated tests passed locally on Apple Silicon with Python 3.12 and FFmpeg; skill package/frontmatter validation passed.
+
+- The new regressions reproduce a long keep range leaving 3 ms at an existing clip boundary, pre-existing short clips, one-frame output clips, safe additional source-audio retention, and post-write validation failure with rollback of all copies.
+- Speech-word tests exercise weak-word/VAD disagreement, stretched timestamps, short intra-word pauses, high compression-ratio repetitions, bounded independent rechecks, unresolved-range protection, cut-only behavior, and temporary transcript cleanup. Both transcription adapters preserve decoding-quality metadata and normalized timestamps.
+- A temporary synthetic Turkish voice with fan-like noise at -25.19 dBFS was processed by real CPU Silero VAD and cached local MLX Whisper large-v3-turbo. Word review was enabled with an explicitly tighter 80 ms gap / 40 ms padding configuration. It retained 12 recognized words, removed 3.748 s from 12.749 s, and produced a 9.001 s proposed timeline without captions. The shortest output clip was exactly 100 ms; 97 ms of extra boundary audio prevented a three-millisecond fragment.
+- That recording exposed a stretched first-word timestamp extending into leading noise. Word review conservatively retained extra noise; long word intervals are now reported for audio inspection. The optional cross-check is not proof of exact phoneme boundaries, perfect noise removal, or intended-speaker isolation.
+- The provided live-edit report informed synthetic regressions and instructions; the real user project and its private report/media are not included or edited by this update. No native CapCut round-trip was performed during this change.
+- The GitHub Actions matrix runs the synthetic suite on macOS, Windows and Linux. Check the release commit's workflow result; local tests alone do not establish CI or native editor compatibility.
+- Native Windows CapCut round-trip validation remains pending.

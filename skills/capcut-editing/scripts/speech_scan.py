@@ -101,15 +101,15 @@ def analyze_samples(samples, config: dict) -> dict:
             recovered.extend(protected)
             reviews.append({"start_us": round(cursor / RATE * 1e6), "end_us": round(finish / RATE * 1e6), "protected_speech_us": [[round(left / RATE * 1e6), round(right / RATE * 1e6)] for left, right in protected], "analysis_gain": gain})
             cursor = finish
-    if not strong and not recovered:
+    if not strong and not recovered and not config["speech_word_review"]:
         raise RuntimeError("No speech found after both VAD passes. No project files changed; inspect the audio/settings instead of deleting the entire timeline")
     raw_speech = merge([*strong, *recovered], duration)
     padding = round(config["speech_padding"] * RATE)
     # Preserve short natural pauses and pad consonants/word tails.
     keep = merge([(start - padding, end + padding) for start, end in raw_speech], duration, minimum_gap)
-    if keep[0][0] < minimum_gap:
+    if keep and keep[0][0] < minimum_gap:
         keep[0] = (0, keep[0][1])
-    if duration - keep[-1][1] < minimum_gap:
+    if keep and duration - keep[-1][1] < minimum_gap:
         keep[-1] = (keep[-1][0], duration)
     to_us = lambda span: [round(span[0] / RATE * 1e6), round(span[1] / RATE * 1e6)]
     return {"method": "silero-vad-with-gap-review", "audio_duration_us": round(duration / RATE * 1e6), "keep_ranges_us": [to_us(span) for span in keep], "speech_ranges_us": [to_us(span) for span in strong], "conservatively_protected_ranges_us": [to_us(span) for span in merge(recovered, duration)], "removed_ranges_us": [to_us(span) for span in gaps(keep, duration)], "gap_reviews": reviews, "note": "Weak speech found during review is kept. Background voices/singing can also count as speech; this is not speaker isolation."}

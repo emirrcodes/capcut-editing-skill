@@ -8,6 +8,75 @@ import re
 import tempfile
 import uuid
 
+MIN_CLIP_US = 100_000
+
+
+def cut_intersections(draft: dict, keep_ranges: list[tuple[int, int]]):
+    """Compute actual output pieces before mutating any tracks/materials."""
+    previous_end = 0
+    for start, end in keep_ranges:
+        if type(start) is not int or type(end) is not int or start < previous_end or end <= start or end > draft["duration"]:
+            raise RuntimeError("Keep ranges must be ordered, disjoint, positive and inside the current timeline")
+        previous_end = end
+    for track in draft.get("tracks", []):
+        if track.get("type") not in {"video", "audio"}:
+            continue
+        for original in track.get("segments", []):
+            target = original["target_timerange"]
+            left, right = target["start"], target["start"] + target["duration"]
+            for start, end in keep_ranges:
+                first, last = max(left, start), min(right, end)
+                if last > first:
+                    yield original, first, last
+
+
+def validate_cut_fragments(draft: dict, original_draft: dict) -> None:
+    originals = {segment["id"]: segment for track in original_draft["tracks"]
+                 if track.get("type") in {"video", "audio"} for segment in track.get("segments", [])}
+    for track in draft["tracks"]:
+        if track.get("type") not in {"video", "audio"}:
+            continue
+        for segment in track.get("segments", []):
+            duration = segment["target_timerange"]["duration"]
+            if duration >= MIN_CLIP_US:
+                continue
+            old = originals.get(segment.get("id"))
+            unchanged = old and old["target_timerange"]["duration"] == duration and all(
+                old.get(key) == segment.get(key) for key in ("source_timerange", "material_id", "extra_material_refs"))
+            if not unchanged:
+                raise RuntimeError(f"New or shortened micro-clip {segment.get('id')}: {duration} us < {MIN_CLIP_US} us")
+
+
+def protect_cut_boundaries(draft: dict, keep_ranges: list[tuple[int, int]]) -> tuple[list[tuple[int, int]], list[list[int]]]:
+    """Keep extra audio inside existing clips instead of dropping tiny pieces.
+
+    Existing short clips stay whole. Extending timeline intervals never merges
+    distinct source ranges; apply still intersects each original clip separately.
+    """
+    from speech_scan import merge, gaps
+    original_keep = merge(keep_ranges, draft["duration"])
+    additions = []
+    for track in draft["tracks"]:
+        if track.get("type") in {"video", "audio"}:
+            for segment in track.get("segments", []):
+                target = segment["target_timerange"]
+                if target["duration"] < MIN_CLIP_US:
+                    additions.append((target["start"], target["start"] + target["duration"]))
+    for original, start, end in cut_intersections(draft, original_keep):
+        if end - start >= MIN_CLIP_US:
+            continue
+        target = original["target_timerange"]
+        left, right = target["start"], target["start"] + target["duration"]
+        if right - left < MIN_CLIP_US:
+            additions.append((left, right))
+        else:
+            first = max(left, min(start, right - MIN_CLIP_US))
+            additions.append((first, min(right, max(end, first + MIN_CLIP_US))))
+    protected = merge([*original_keep, *additions], draft["duration"])
+    extra = [(max(left, start), min(right, end)) for left, right in gaps(original_keep, draft["duration"])
+             for start, end in protected if min(right, end) > max(left, start)]
+    return protected, [list(span) for span in extra]
+
 def atomic_write(path: Path, payload: bytes) -> None:
     fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
@@ -51,6 +120,9 @@ def duplicate_material(draft: dict, material_index: dict[str, tuple[str, dict]],
 
 
 def apply_timeline_keep_ranges(draft: dict, keep_ranges: list[tuple[int, int]]) -> int:
+    for original, start, end in cut_intersections(draft, keep_ranges):
+        if end - start < MIN_CLIP_US and end - start < original["target_timerange"]["duration"]:
+            raise RuntimeError(f"Cut would create a micro-clip at {original.get('id')}: {end-start} us < {MIN_CLIP_US} us. Revise the cut to keep more boundary audio; do not discard speech.")
     material_index: dict[str, tuple[str, dict]] = {}
     for bucket, items in draft.get("materials", {}).items():
         if not isinstance(items, list):
